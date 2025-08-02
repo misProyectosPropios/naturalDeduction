@@ -1,14 +1,16 @@
 const IntuicionisticRules = Object.freeze({
     AXIOM: "Axiom", 
     AND_INTRODUCTION: "∧I", 
-    AND_ELIMINATION: "∧E",  
+    AND_ELIMINATION_1: "∧E1",  
+    AND_ELIMINATION_2: "∧E2",  
     IMPLICATION_INTRODUCTION: "→I",
     IMPLICATION_ELIMINATION: "→E", 
-    OR_INTRODUCTION: "∨I", 
+    OR_INTRODUCTION_1: "∨I1", 
+    OR_INTRODUCTION_2: "∨I2", 
     OR_ELIMINATION: "∨E",  
     NEGATION_INTRODUCTION: "¬I", 
     NEGATION_ELIMINATION: "¬E",  
-    BOTTOM_INTRODUCTION: "⊥I", 
+    BOTTOM_ELIMINATION: "⊥E", 
 
     // Reglas Derivadas Comunes
     MODUS_TOLLENS: "MT", 
@@ -131,58 +133,39 @@ class Paso {
                 return this.isInTheContext(this.resolvente);
 
             case IntuicionisticRules.AND_INTRODUCTION:
-                return this.contexto.some(prop => 
-                    prop.type === 'And' &&
-                    this.isInTheContext(prop.left) &&
-                    this.isInTheContext(prop.right)
-                );
+                return this.resolvente.type === 'And';
 
-            case IntuicionisticRules.AND_ELIMINATION:
-                return this.contexto.some(prop => 
-                    prop.type === 'And' &&
-                    (Prop.equals(this.resolvente, prop.left) || Prop.equals(this.resolvente, prop.right))
-                );
-
-            case IntuicionisticRules.IMPLICATION_INTRODUCTION:
+            case IntuicionisticRules.AND_ELIMINATION_1:
+            case IntuicionisticRules.AND_ELIMINATION_2:
                 return true;
 
-            case IntuicionisticRules.IMPLICATION_ELIMINATION:
-                return this.contexto.some(prop => 
-                    prop.type === 'Impl' &&
-                    Prop.equals(prop.left, this.resolvente)
-                );
+            case IntuicionisticRules.IMPLICATION_INTRODUCTION:
+                return this.resolvente.type === 'Impl';
 
-            case IntuicionisticRules.OR_INTRODUCTION:
-                return this.resolvente.type === 'Or' &&
-                    (this.isInTheContext(this.resolvente.left) || this.isInTheContext(this.resolvente.right));
+            case IntuicionisticRules.IMPLICATION_ELIMINATION:
+                return true;
+
+            case IntuicionisticRules.OR_INTRODUCTION_1:
+            case IntuicionisticRules.OR_INTRODUCTION_2:
+                return this.resolvente.type === 'Or';
 
             case IntuicionisticRules.OR_ELIMINATION:
                 return true;
 
             case IntuicionisticRules.NEGATION_INTRODUCTION:
-                return true;
+                return this.resolvente.type === 'Neg';
 
             case IntuicionisticRules.NEGATION_ELIMINATION:
-                return this.contexto.some(prop => 
-                    prop.type === 'Neg' &&
-                    this.isInTheContext(prop.prop)
-                );
+                return true;
 
-            case IntuicionisticRules.BOTTOM_INTRODUCTION:
+            case IntuicionisticRules.BOTTOM_ELIMINATION:
                 return true;
 
             case IntuicionisticRules.MODUS_TOLLENS:
-                return this.contexto.some(prop => 
-                    prop.type === 'Impl' &&
-                    this.isInTheContext(prop.right.neg())
-                );
+                return this.resolvente.type === 'Neg';
 
             case IntuicionisticRules.NEGATION_NEGATION_INTRODUCTION:
-                return this.contexto.some(prop => 
-                    prop.type === 'Neg' &&
-                    prop.prop.type === 'Neg' &&
-                    Prop.equals(prop.prop.prop, this.resolvente)
-                );
+                return this.resolvente.type === 'Neg' && this.resolvente.prop.type === 'Neg';
 
             default:
                 throw new Error(`Regla no reconocida: ${ruleName}`);
