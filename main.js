@@ -28,7 +28,67 @@ const ClassicalRules = Object.freeze({
 });
 
 class Resolvedor {
-    //Hacer que tenga un DAG de pasos resolvidos
+    /**
+     * Constructor: Inicializa el resolvedor con un paso inicial.
+     * @param {Paso} pasoInicial - El paso inicial de la prueba.
+     */
+    constructor(pasoInicial) {
+        if (!(pasoInicial instanceof Paso)) {
+            throw new Error("El paso inicial debe ser una instancia de Paso.");
+        }
+        // Lista de tuplas: [paso, índice del paso anterior]
+        this.pasos = [[pasoInicial, null]];
+    }
+
+    /**
+     * Muestra los pasos actuales en la consola.
+     * Marca los pasos que necesitan aplicar una regla.
+     */
+    mostrarPasos() {
+        console.log("Pasos actuales:");
+        for (let i = this.pasos.length - 1; i >= 0; i--) {
+            const [paso, anterior] = this.pasos[i];
+            const estado = paso.isAbleToAPllyRule(IntuicionisticRules.AXIOM) ? "✔️ Completo" : "❌ Necesita regla";
+            console.log(`Paso ${i}: ${paso.toString()} (Anterior: ${anterior}) - ${estado}`);
+        }
+    }
+
+    /**
+     * Selecciona una regla para aplicar a un paso no completo.
+     * @param {number} indicePaso - Índice del paso al que se aplicará la regla.
+     * @param {string} regla - Nombre de la regla a aplicar.
+     * @returns {boolean} True si la regla puede aplicarse, false en caso contrario.
+     */
+    seleccionarRegla(indicePaso, regla) {
+        if (indicePaso < 0 || indicePaso >= this.pasos.length) {
+            throw new Error("Índice de paso inválido.");
+        }
+        const [paso] = this.pasos[indicePaso];
+        return paso.isAbleToAPllyRule(regla);
+    }
+
+    /**
+     * Aplica una regla a un paso y crea un nuevo paso.
+     * @param {number} indicePaso - Índice del paso al que se aplicará la regla.
+     * @param {Paso} nuevoPaso - El nuevo paso generado por la regla.
+     */
+    aplicarRegla(indicePaso, nuevoPaso) {
+        if (indicePaso < 0 || indicePaso >= this.pasos.length) {
+            throw new Error("Índice de paso inválido.");
+        }
+        if (!(nuevoPaso instanceof Paso)) {
+            throw new Error("El nuevo paso debe ser una instancia de Paso.");
+        }
+        this.pasos.push([nuevoPaso, indicePaso]);
+    }
+
+    /**
+     * Verifica si la prueba está completa.
+     * @returns {boolean} True si todos los pasos terminan en axioma o tienen una regla aplicada.
+     */
+    isCompleteProof() {
+        return this.pasos.every(([paso]) => paso.isAbleToAPllyRule(IntuicionisticRules.AXIOM));
+    }
 }
 
 // --- Definición de la Clase Paso ---
@@ -68,13 +128,13 @@ class Paso {
     isAbleToAPllyRule(ruleName) {
         switch (ruleName) {
             case IntuicionisticRules.AXIOM:
-                return this.contexto.some(prop => Prop.equals(prop, this.resolvente));
+                return this.isInTheContext(this.resolvente);
 
             case IntuicionisticRules.AND_INTRODUCTION:
                 return this.contexto.some(prop => 
                     prop.type === 'And' &&
-                    this.contexto.some(ctxProp => Prop.equals(ctxProp, prop.left)) &&
-                    this.contexto.some(ctxProp => Prop.equals(ctxProp, prop.right))
+                    this.isInTheContext(prop.left) &&
+                    this.isInTheContext(prop.right)
                 );
 
             case IntuicionisticRules.AND_ELIMINATION:
@@ -85,6 +145,7 @@ class Paso {
 
             case IntuicionisticRules.IMPLICATION_INTRODUCTION:
                 return true;
+
             case IntuicionisticRules.IMPLICATION_ELIMINATION:
                 return this.contexto.some(prop => 
                     prop.type === 'Impl' &&
@@ -93,8 +154,7 @@ class Paso {
 
             case IntuicionisticRules.OR_INTRODUCTION:
                 return this.resolvente.type === 'Or' &&
-                    (this.contexto.some(ctxProp => Prop.equals(ctxProp, this.resolvente.left)) ||
-                     this.contexto.some(ctxProp => Prop.equals(ctxProp, this.resolvente.right)));
+                    (this.isInTheContext(this.resolvente.left) || this.isInTheContext(this.resolvente.right));
 
             case IntuicionisticRules.OR_ELIMINATION:
                 return true;
@@ -105,7 +165,7 @@ class Paso {
             case IntuicionisticRules.NEGATION_ELIMINATION:
                 return this.contexto.some(prop => 
                     prop.type === 'Neg' &&
-                    this.contexto.some(ctxProp => Prop.equals(ctxProp, prop.prop))
+                    this.isInTheContext(prop.prop)
                 );
 
             case IntuicionisticRules.BOTTOM_INTRODUCTION:
@@ -114,9 +174,7 @@ class Paso {
             case IntuicionisticRules.MODUS_TOLLENS:
                 return this.contexto.some(prop => 
                     prop.type === 'Impl' &&
-                    this.contexto.some(ctxProp => 
-                        Prop.equals(ctxProp, prop.right.neg())
-                    )
+                    this.isInTheContext(prop.right.neg())
                 );
 
             case IntuicionisticRules.NEGATION_NEGATION_INTRODUCTION:
@@ -129,6 +187,11 @@ class Paso {
             default:
                 throw new Error(`Regla no reconocida: ${ruleName}`);
         }
+    }
+
+    isInTheContext(proposition) {
+        // Devuelve true si la proposición está en el contexto
+        return this.contexto.some(ctxProp => Prop.equals(ctxProp, proposition));
     }
 }
 
