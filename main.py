@@ -246,55 +246,121 @@ class Resolver:
             print(f"Error: Paso {num_pos} ya está resuelto o no existe como paso a resolver.")
             return False
 
-        if num_pos >= len(self.lista_de_pasos):
+        if num_pos >= len(self.lista_de_pasos) or num_pos < 0:
             print(f"Error: El número de posición {num_pos} está fuera de los límites de la lista de pasos.")
             return False
 
         current_paso, _, _ = self.lista_de_pasos[num_pos]
-        
+
         # 1. Check if the rule is structurally applicable to the resolvent of this step
-        #    Note: This is only a structural check. It does not check premises.
         if not esReglaAplicable(current_paso.resolvente, regla, self.contexto_inicial):
             print(f"Error: La regla '{regla.value}' no es estructuralmente aplicable a la proposición {pretty_print(current_paso.resolvente)}.")
             return False
 
-        # 2. Implement the rule logic. This is where the complexity lies.
-        #    This section needs to be expanded significantly based on each rule.
-        #    For now, it's a placeholder.
-        #    For each rule:
-        #    a. Check if the required premises (from `self.lista_de_pasos` or `self.contexto_inicial`)
-        #       are available. This will involve using `referencias_indices`.
-        #    b. If premises are available and the rule's conditions are met:
-        #       i. Create new `Paso` objects (new sub-goals to resolve) if the rule introduces them.
-        #          e.g., for Implication Introduction, you'd add a new step assuming the premise.
-        #       ii. Add new steps to `self.lista_de_pasos`.
-        #       iii. Add the indices of new steps to `self.pasos_a_resolver`.
-        #       iv. Remove `num_pos` from `self.pasos_a_resolver`.
-        #       v. Update the `rule_applied` and `references` of `current_paso` in `self.lista_de_pasos`.
+        # print(f"Aplicando regla '{regla.value}' al paso {num_pos} (Prop: {pretty_print(current_paso.resolvente)})...")
 
-        print(f"Aplicando regla '{regla.value}' al paso {num_pos} (Prop: {pretty_print(current_paso.resolvente)})...")
+        # --- Use match statement for rule specific logic ---
+        match regla:
+            case LogicRules.AXIOM:
+                # Logic for AXIOM rule
+                if current_paso.resolvente in self.contexto_inicial:
+                    self.pasos_a_resolver.remove(num_pos)
+                    self.lista_de_pasos[num_pos] = (
+                        Paso(current_paso.contexto, current_paso.resolvente, rule_applied=regla, references=referencias_indices),
+                        num_pos,
+                        regla
+                    )
+                    self.proposiciones_probadas.append(current_paso.resolvente)
+                    print(f"Paso {num_pos} (AXIOM) resuelto: {pretty_print(current_paso.resolvente)}")
+                    return True
+                else:
+                    print(f"Error: {pretty_print(current_paso.resolvente)} no es un axioma en el contexto.")
+                    return False
 
-        # Placeholder logic for successful application for AXIOM only for demonstration
-        if regla == LogicRules.AXIOM:
-            if current_paso.resolvente in self.contexto_inicial:
-                self.pasos_a_resolver.remove(num_pos)
-                # Update the rule and references for the completed step
-                # A new tuple is created because tuples are immutable
-                self.lista_de_pasos[num_pos] = (
-                    Paso(current_paso.contexto, current_paso.resolvente, rule_applied=regla, references=references_indices),
-                    num_pos,
-                    regla
-                )
-                self.proposiciones_probadas.append(current_paso.resolvente)
-                print(f"Paso {num_pos} (AXIOM) resuelto: {pretty_print(current_paso.resolvente)}")
-                return True
-            else:
-                print(f"Error: {pretty_print(current_paso.resolvente)} no es un axioma en el contexto.")
+            case LogicRules.AND_INTRODUCTION:
+                # Logic for AND_INTRODUCTION rule (∧I)
+                print(f"Logic for {regla.value} not yet implemented.")
                 return False
-        
-        # For other rules, you'd need specific logic for checking premises and adding new steps
-        print("Logic for this rule is not yet fully implemented.")
-        return False # Placeholder
+
+            case LogicRules.AND_ELIMINATION_1:
+                # Logic for AND_ELIMINATION_1 rule (∧E1)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.AND_ELIMINATION_2:
+                # Logic for AND_ELIMINATION_2 rule (∧E2)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.IMPLICATION_INTRODUCTION:
+                # Logic for IMPLICATION_INTRODUCTION rule (→I)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.IMPLICATION_ELIMINATION:
+                # Logic for IMPLICATION_ELIMINATION rule (→E)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.OR_INTRODUCTION_1:
+                # Logic for OR_INTRODUCTION_1 rule (∨I1)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.OR_INTRODUCTION_2:
+                # Logic for OR_INTRODUCTION_2 rule (∨I2)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.OR_ELIMINATION:
+                # Logic for OR_ELIMINATION rule (∨E)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.NEGATION_INTRODUCTION:
+                # Logic for NEGATION_INTRODUCTION rule (¬I)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.NEGATION_ELIMINATION:
+                # Logic for NEGATION_ELIMINATION rule (¬E)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.BOTTOM_ELIMINATION:
+                # Logic for BOTTOM_ELIMINATION rule (⊥E)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.MODUS_TOLLENS:
+                # Logic for MODUS_TOLLENS rule (MT)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.NEGATION_NEGATION_INTRODUCTION:
+                # Logic for NEGATION_NEGATION_INTRODUCTION rule (¬¬I)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.NEGATION_NEGATION_ELIMINATION:
+                # Logic for NEGATION_NEGATION_ELIMINATION rule (¬¬E)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.EXCLUDED_MIDDLE:
+                # Logic for EXCLUDED_MIDDLE rule (LEM)
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case LogicRules.PBC:
+                # Logic for PBC rule
+                print(f"Logic for {regla.value} not yet implemented.")
+                return False
+
+            case _:
+                # This case should ideally not be reached if all LogicRules are covered.
+                print(f"Error: Regla desconocida '{regla.value}'.")
+                return False
 
     def mostrar_prueba(self):
         """
