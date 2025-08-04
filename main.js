@@ -30,70 +30,84 @@ const ClassicalRules = Object.freeze({
 });
 
 class Resolvedor {
-    /**
-     * Constructor: Inicializa el resolvedor con un paso inicial.
-     * @param {Paso} pasoInicial - El paso inicial de la prueba.
-     */
-    constructor(pasoInicial) {
-        if (!(pasoInicial instanceof Paso)) {
-            throw new Error("El paso inicial debe ser una instancia de Paso.");
-        }
-        // Lista de tuplas: [paso, índice del paso anterior]
-        this.pasos = [[pasoInicial, null]];
+    constructor(contexto, resolvente) {
+        this.contexto = contexto;
+        this.resolvente = resolvente;
+        primerPaso = new Paso(contexto, resolvente);
+        this.listaDePasos = [primerPaso, 0, null];
+        this.pasosAResolver = new Set([0]);
     }
 
-    /**
-     * Muestra los pasos actuales en la consola.
-     * Marca los pasos que necesitan aplicar una regla.
-     */
-    mostrarPasos() {
-        console.log("Pasos actuales:");
-        for (let i = this.pasos.length - 1; i >= 0; i--) {
-            const [paso, anterior] = this.pasos[i];
-            const estado = paso.isAbleToAPllyRule(IntuicionisticRules.AXIOM) ? "✔️ Completo" : "❌ Necesita regla";
-            console.log(`Paso ${i}: ${paso.toString()} (Anterior: ${anterior}) - ${estado}`);
+    esCompletaPrueba() {
+        return this.pasosAResolver.size === 0;
+    }
+
+    esAxioma(paso) {
+        // Verifica si un paso es un axioma
+        return paso.isInTheContext(paso.resolvente);
+    }
+
+    implementRule(numeroPaso, regla) {
+        //Agrega los nuevos pasos a resolver a partir de la regla
+        //Por cada paso agregar la cantidad de pasos que se digan y como deberían estar puestas
+        if (!this.listaDePasos.isAbleToAPllyRule(regla)) {
+            throw new Error(`No es posible usar la regla ${regla} en este paso`);
+        }
+        if (!this.pasosAResolver.has(numeroPaso)) {
+            throw new Error(`No se puede aplicar otra regla a un paso al que ya se le aplicó`);
+        }
+        switch (regla) {
+            case IntuicionisticRules.AND_ELIMINATION_1:
+                break;
+            case IntuicionisticRules.AND_ELIMINATION_2:
+                break;
+            case IntuicionisticRules.AND_INTRODUCTION:
+                const pasoActual = this.listaDePasos[numeroPaso];
+                const ladoIzquierdo = pasoActual.resolvente.left;
+                const ladoDerecho = pasoActual.resolvente.right;
+
+                const nuevoPasoIzquierdo = new Paso(pasoActual.contexto, ladoIzquierdo);
+                const nuevoPasoDerecho = new Paso(pasoActual.contexto, ladoDerecho);
+
+                this.listaDePasos.push(nuevoPasoIzquierdo);
+                this.listaDePasos.push(nuevoPasoDerecho);
+
+                this.pasosAResolver.delete(numeroPaso);
+                this.pasosAResolver.add(this.listaDePasos.length - 2); // Índice del nuevo paso izquierdo
+                this.pasosAResolver.add(this.listaDePasos.length - 1); // Índice del nuevo paso derecho
+                break;
+            case IntuicionisticRules.IMPLICATION_INTRODUCTION:
+                break;
+            case IntuicionisticRules.IMPLICATION_ELIMINATION:
+                break;
+            case IntuicionisticRules.OR_INTRODUCTION_1:
+                break;
+            case IntuicionisticRules.OR_INTRODUCTION_2:
+                break;
+            case IntuicionisticRules.OR_ELIMINATION:
+                break;
+            case IntuicionisticRules.NEGATION_INTRODUCTION:
+                break;
+            case IntuicionisticRules.NEGATION_ELIMINATION:
+                break;
+            case IntuicionisticRules.BOTTOM_ELIMINATION:
+                break;
+            case IntuicionisticRules.MODUS_TOLLENS:
+                break;
+            case IntuicionisticRules.NEGATION_NEGATION_INTRODUCTION:
+                break;
         }
     }
 
-    /**
-     * Selecciona una regla para aplicar a un paso no completo.
-     * @param {number} indicePaso - Índice del paso al que se aplicará la regla.
-     * @param {string} regla - Nombre de la regla a aplicar.
-     * @returns {boolean} True si la regla puede aplicarse, false en caso contrario.
-     */
-    seleccionarRegla(indicePaso, regla) {
-        if (indicePaso < 0 || indicePaso >= this.pasos.length) {
-            throw new Error("Índice de paso inválido.");
-        }
-        const [paso] = this.pasos[indicePaso];
-        return paso.isAbleToAPllyRule(regla);
-    }
-
-    /**
-     * Aplica una regla a un paso y crea un nuevo paso.
-     * @param {number} indicePaso - Índice del paso al que se aplicará la regla.
-     * @param {Paso} nuevoPaso - El nuevo paso generado por la regla.
-     */
-    aplicarRegla(indicePaso, nuevoPaso) {
-        if (indicePaso < 0 || indicePaso >= this.pasos.length) {
-            throw new Error("Índice de paso inválido.");
-        }
-        if (!(nuevoPaso instanceof Paso)) {
-            throw new Error("El nuevo paso debe ser una instancia de Paso.");
-        }
-        this.pasos.push([nuevoPaso, indicePaso]);
-    }
-
-    /**
-     * Verifica si la prueba está completa.
-     * @returns {boolean} True si todos los pasos terminan en axioma o tienen una regla aplicada.
-     */
-    isCompleteProof() {
-        return this.pasos.every(([paso]) => paso.isAbleToAPllyRule(IntuicionisticRules.AXIOM));
+    mostrarPrueba() {
+        //Muestra la prueba
+        const reversedSteps = [...this.listaDePasos].reverse();
+        reversedSteps.forEach(function(element, index) {
+            console.log(`${reversedSteps.length - 1 - index}: ${element.toString()}`);
+        });
     }
 }
 
-// --- Definición de la Clase Paso ---
 class Paso {
     /**
      * Crea una nueva instancia de Paso.
@@ -131,42 +145,30 @@ class Paso {
         switch (ruleName) {
             case IntuicionisticRules.AXIOM:
                 return this.isInTheContext(this.resolvente);
-
             case IntuicionisticRules.AND_INTRODUCTION:
                 return this.resolvente.type === 'And';
-
             case IntuicionisticRules.AND_ELIMINATION_1:
             case IntuicionisticRules.AND_ELIMINATION_2:
                 return true;
-
             case IntuicionisticRules.IMPLICATION_INTRODUCTION:
                 return this.resolvente.type === 'Impl';
-
             case IntuicionisticRules.IMPLICATION_ELIMINATION:
                 return true;
-
             case IntuicionisticRules.OR_INTRODUCTION_1:
             case IntuicionisticRules.OR_INTRODUCTION_2:
                 return this.resolvente.type === 'Or';
-
             case IntuicionisticRules.OR_ELIMINATION:
                 return true;
-
             case IntuicionisticRules.NEGATION_INTRODUCTION:
                 return this.resolvente.type === 'Neg';
-
             case IntuicionisticRules.NEGATION_ELIMINATION:
                 return true;
-
             case IntuicionisticRules.BOTTOM_ELIMINATION:
                 return true;
-
             case IntuicionisticRules.MODUS_TOLLENS:
                 return this.resolvente.type === 'Neg';
-
             case IntuicionisticRules.NEGATION_NEGATION_INTRODUCTION:
                 return this.resolvente.type === 'Neg' && this.resolvente.prop.type === 'Neg';
-
             default:
                 throw new Error(`Regla no reconocida: ${ruleName}`);
         }
@@ -256,112 +258,34 @@ class Prop {
     }
 }
 
-
 // Para crear variables:
 const Var = (name) => new Prop('Var', name);
 const Bottom = () => new Prop('Bottom');
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// Ejemplos de uso:
-const p = Var("p");
-const q = Var("q");
-const r = Var("r");
-
-// Representando "p -> q"
-const pImplQ = p.impl(q);
-console.log("p -> q:", pImplQ.toString()); // Salida: (p → q)
-
-// Representando "(p /\ q) -> r"
-const complexProp = p.and(q).impl(r);
-console.log("(p /\\ q) -> r:", complexProp.toString()); // Salida: ((p ∧ q) → r)
-
-// Representando "not p"
-const notP = p.neg();
-console.log("not p:", notP.toString()); // Salida: (¬p)
-
-// Si usas console.log(objeto) directamente, algunas consolas (como la de Node.js)
-// pueden usar el método `inspect` o `[Symbol.for('nodejs.util.inspect.custom')]`
-// Si quieres que `console.log(pImplQ)` también use `toString()`, puedes descomentar el método opcional de arriba.
-// Sin ese método, console.log(pImplQ) seguirá mostrando la estructura interna del objeto.
-console.log("\nEjemplo de console.log(objeto) sin toString() personalizado en el objeto:");
-console.log(pImplQ); // Esto mostrará la estructura completa del objeto, no solo la cadena formateada.
-
-// Si descomentas el método [Symbol.for('nodejs.util.inspect.custom')]
-// console.log("\nEjemplo de console.log(objeto) con toString() personalizado en el objeto (descomentar el método [Symbol.for('nodejs.util.inspect.custom')]):");
-// console.log(pImplQ);
-
-/*
- <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
+function Main() {
+/**
+ * Metodos a implementar:
+ * + Obtener el contexto y la resolvente (y guardarlo que se entienda en main.js (un parser)).
+ * + Ir resolviendo la deducción evaluando si cada paso nuevo es resoluble o no
+ * + Resolver hasta llegar a la prueba final
  */
+    contexto = obtenerContexto();
+    resolvente = obtenerResolvente();
+    resolv = new Resolvedor(contexto, resolvente);
 
+}
 
+function obtenerContexto() {
+    let input = "";
+}
 
+function obtenerResolvente() {
 
+}
+
+//Feature más adelante
+class TablaDeVerdad{
+    // Hace la tabla de verdad de una proposición dada
+    // Muestra si es tautologia, contingencia o contradicción
+    // Muestra la tabla de verdad
+}
