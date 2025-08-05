@@ -368,7 +368,7 @@ class Resolver:
             case LogicRules.NEGATION_ELIMINATION:
                 a = getFormula()
                 paso_a = Paso(contexto=current_paso.contexto, resolvente=a)
-                paso_neg_a = Paso(contexto=current_paso.contexto, resolvente=a.neg())
+                paso_neg_a = Paso(contexto=current_paso.contexto, resolvente=NEG(a))
                 idx_a = len(self.lista_de_pasos)
                 idx_neg_a = len(self.lista_de_pasos) + 1
                 self.lista_de_pasos.append((paso_a, num_pos, None))
