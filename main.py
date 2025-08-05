@@ -2,35 +2,33 @@ from dataclasses import dataclass
 from typing import Union, List, Set, Tuple
 from enum import Enum
 
-# --- Proposition Types ---
-# Note: Added 'IMPLIES' to the Union for Prop type hint.
-Prop = Union["NEG", "AND", "OR", "BOTTOM", "VAR", "IMPLIES"]
+class Prop: pass
 
-@dataclass(eq=True, frozen=True) # Added eq=True, frozen=True for easy comparison and use in sets/dicts
-class NEG:
+@dataclass(eq=True, frozen=True)
+class NEG(Prop):
     prop: Prop
 
 @dataclass(eq=True, frozen=True)
-class AND:
+class AND(Prop):
     left: Prop
     right: Prop
 
 @dataclass(eq=True, frozen=True)
-class OR:
+class OR(Prop):
     left: Prop
     right: Prop
 
 @dataclass(eq=True, frozen=True)
-class IMPLIES:
+class IMPLIES(Prop):
     premise: Prop
     conclusion: Prop
 
 @dataclass(eq=True, frozen=True)
-class BOTTOM:
+class BOTTOM(Prop):
     pass
 
 @dataclass(eq=True, frozen=True)
-class VAR:
+class VAR(Prop):
     name: str
 
 # --- Pretty Print Function ---
@@ -65,17 +63,16 @@ class LogicRules(Enum):
     NEGATION_INTRODUCTION = "¬I"
     NEGATION_ELIMINATION = "¬E"
     BOTTOM_ELIMINATION = "⊥E"
-
     # Reglas derivadas
     MODUS_TOLLENS = "MT"
     NEGATION_NEGATION_INTRODUCTION = "¬¬I"
 
     # Classical-specific axiom/rule
     NEGATION_NEGATION_ELIMINATION = "¬¬E"
-
     # Reglas Derivadas Comunes
     EXCLUDED_MIDDLE = "LEM"
     PBC = "PBC"
+
 
 # --- Helper Functions for User Input Parsing (from previous interactions) ---
 def parse_formula(expr: str) -> Prop:
@@ -89,13 +86,10 @@ def parse_formula(expr: str) -> Prop:
         'BOTTOM': BOTTOM
     }
     try:
-        # eval is powerful but can be risky if input is not controlled.
-        # For a production system, consider a dedicated parsing library.
         return eval(expr, {"__builtins__": None}, allowed_globals)
     except Exception as e:
         raise ValueError(f"Error parsing formula '{expr}': {e}")
 
-# Placeholder for user input functions - you'll connect these to actual input later
 def getContext() -> List[Prop]:
     print("Enter context propositions (e.g., 'VAR(\"P\")', 'IMPLIES(VAR(\"P\"), VAR(\"Q\"))'). Empty line to finish:")
     context = []
@@ -123,17 +117,55 @@ def getResolvent() -> Prop:
         except ValueError as e:
             print(f"Invalid input: {e}. Please try again.")
 
-# --- esReglaAplicable Function (corrected and modified for Resolver class) ---
-# This version assumes 'contexto' will be passed from the Resolver instance.
-def esReglaAplicable(prop: Prop, regla: LogicRules, context: List[Prop]) -> bool:
+def getFormula() -> Prop:
     """
-    Checks if a given proposition 'prop' has the correct structure
+    Prompts the user to input a formula and parses it into a Prop object.
+    """
+    print("Enter a formula (e.g., 'VAR(\"P\")', 'AND(VAR(\"A\"), VAR(\"B\"))'):")
+    while True:
+        try:
+            user_input = input("> ").strip()
+            if not user_input:
+                print("Formula cannot be empty.")
+                continue
+            return parse_formula(user_input)
+        except ValueError as e:
+            print(f"Invalid input: {e}. Please try again.")
+
+# --- Paso Class (as per your previous context) ---
+@dataclass
+class Paso:
+    contexto: List[Prop]
+    resolvente: Prop
+
+    def __post_init__(self):
+        # Ensure context elements are Props
+        if not all(isinstance(item, Prop) for item in self.contexto):
+            raise TypeError("All elements in 'contexto' must be instances of Prop.")
+        # Ensure resolvente is a Prop
+        if not isinstance(self.resolvente, Prop):
+            raise TypeError("'resolvente' must be an instance of Prop.")
+
+    def toString(self) -> str:
+        contexto_str = ', '.join(pretty_print(prop) for prop in self.contexto)
+        return f"{contexto_str} ⊢ {pretty_print(self.resolvente)}"
+
+    def isInTheContext(self, proposition: Prop) -> bool:
+        # Devuelve true si la proposición está en el contexto
+        return proposition in self.contexto
+
+def esReglaAplicable(paso: Paso, regla: LogicRules) -> bool:
+    """
+    Checks if a given step 'paso' has the correct structure
     to be the conclusion of the specified 'regla' (rule).
-    It also checks if the proposition 'prop' itself is an axiom within the given context.
+    It also checks if the proposition in 'paso.resolvente' itself is an axiom within the given context.
     """
+    prop = paso.resolvente
+    context = paso.contexto
+
     match regla:
         case LogicRules.AXIOM:
-            return prop in context # Check if the proposition is in the provided context
+            return prop in context  # Check if the proposition is in the provided context
 
         case LogicRules.AND_INTRODUCTION:
             return isinstance(prop, AND)
@@ -165,34 +197,10 @@ def esReglaAplicable(prop: Prop, regla: LogicRules, context: List[Prop]) -> bool
             return isinstance(prop, OR) and \
                    isinstance(prop.right, NEG) and \
                    prop.left == prop.right.prop
+
         case _:
             raise ValueError(f"Regla no reconocida o no implementada: {regla.value}")
 
-# --- Paso Class (as per your previous context) ---
-@dataclass
-class Paso:
-    contexto: List[Prop]
-    resolvente: Prop
-    # Adding an optional 'rule_applied' and 'references' for better representation in the proof
-    rule_applied: LogicRules = None
-    references: Tuple[int, ...] = tuple() # Indices of steps this step depends on
-
-    def __post_init__(self):
-        # Ensure context elements are Props
-        if not all(isinstance(item, Prop) for item in self.contexto):
-            raise TypeError("All elements in 'contexto' must be instances of Prop.")
-        # Ensure resolvente is a Prop
-        if not isinstance(self.resolvente, Prop):
-            raise TypeError("'resolvente' must be an instance of Prop.")
-
-    def toString(self) -> str:
-        contexto_str = ', '.join(pretty_print(prop) for prop in self.contexto)
-        return f"{contexto_str} ⊢ {pretty_print(self.resolvente)}"
-
-    def isInTheContext(self, proposition: Prop) -> bool:
-        # Devuelve true si la proposición está en el contexto
-        # Using the __eq__ method from dataclass (if eq=True is set)
-        return proposition in self.contexto
 
 # --- Resolver Class ---
 class Resolver:
@@ -204,23 +212,15 @@ class Resolver:
         Initializes the Resolver with the initial context (axioms/assumptions)
         and the final proposition to be proven (resolvent).
         """
-        self.contexto_inicial = contexto_inicial
-        self.resolvente_final = resolvente_final
+        contexto_inicial = contexto_inicial
+        resolvente_final = resolvente_final
 
-        # listaDePasos will store tuples: (Paso object, step_index, rule_applied)
-        # The first step represents the goal to be proven.
-        initial_goal_paso = Paso(contexto_inicial, resolvente_final, rule_applied=LogicRules.AXIOM, references=())
+        # listaDePasos store tuples: (Paso object, step_index, rule_applied)
+        initial_goal_paso = Paso(contexto_inicial, resolvente_final)
         self.lista_de_pasos: List[Tuple[Paso, int, LogicRules]] = [
-            (initial_goal_paso, 0, LogicRules.AXIOM) # Or a custom "GOAL" rule
+            (initial_goal_paso, 0, None) 
         ]
-
-        # pasos_a_resolver stores indices of steps that still need a rule applied
-        # to justify them. Initially, only the goal needs to be justified.
-        self.pasos_a_resolver: Set[int] = {0} # Use 0-based indexing for the first step
-
-        # You might also want a way to keep track of established/proven propositions
-        # based on the steps already completed. This is crucial for rule application.
-        self.proposiciones_probadas: List[Prop] = [] # List of propositions already derived
+        self.pasos_a_resolver: Set[int] = {0}  
 
     def isProofComplete(self) -> bool:
         """
@@ -229,7 +229,7 @@ class Resolver:
         """
         return len(self.pasos_a_resolver) == 0
 
-    def aplicarRegla(self, num_pos: int, regla: LogicRules, *referencias_indices: int) -> bool:
+    def aplicarRegla(self, num_pos: int, regla: LogicRules) -> bool:
         """
         Attempts to apply a given rule to the step at `num_pos`.
         If successful, it updates `pasos_a_resolver` and `lista_de_pasos`.
@@ -237,7 +237,6 @@ class Resolver:
         Args:
             num_pos (int): The 0-based index of the step to which the rule is being applied.
             regla (LogicRules): The rule to attempt to apply.
-            *referencias_indices (int): Optional, indices of previous steps this rule depends on.
 
         Returns:
             bool: True if the rule was successfully applied, False otherwise.
@@ -252,114 +251,190 @@ class Resolver:
 
         current_paso, _, _ = self.lista_de_pasos[num_pos]
 
-        # 1. Check if the rule is structurally applicable to the resolvent of this step
-        if not esReglaAplicable(current_paso.resolvente, regla, self.contexto_inicial):
+        if not esReglaAplicable(current_paso, regla):
             print(f"Error: La regla '{regla.value}' no es estructuralmente aplicable a la proposición {pretty_print(current_paso.resolvente)}.")
             return False
 
-        # print(f"Aplicando regla '{regla.value}' al paso {num_pos} (Prop: {pretty_print(current_paso.resolvente)})...")
+        print(f"Aplicando regla '{regla.value}' al paso {num_pos} (Prop: {pretty_print(current_paso.resolvente)})...")
 
-        # --- Use match statement for rule specific logic ---
         match regla:
             case LogicRules.AXIOM:
-                # Logic for AXIOM rule
                 if current_paso.resolvente in self.contexto_inicial:
                     self.pasos_a_resolver.remove(num_pos)
                     self.lista_de_pasos[num_pos] = (
-                        Paso(current_paso.contexto, current_paso.resolvente, rule_applied=regla, references=referencias_indices),
-                        num_pos,
-                        regla
-                    )
-                    self.proposiciones_probadas.append(current_paso.resolvente)
-                    print(f"Paso {num_pos} (AXIOM) resuelto: {pretty_print(current_paso.resolvente)}")
+                        Paso(current_paso.contexto, current_paso.resolvente), num_pos, regla)
                     return True
                 else:
-                    print(f"Error: {pretty_print(current_paso.resolvente)} no es un axioma en el contexto.")
                     return False
 
             case LogicRules.AND_INTRODUCTION:
-                # Logic for AND_INTRODUCTION rule (∧I)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                izquierda = current_paso.resolvente.left
+                derecha = current_paso.resolvente.right
+                paso_izq = Paso(contexto=current_paso.contexto, resolvente=izquierda)
+                paso_der = Paso(contexto=current_paso.contexto, resolvente=derecha)
+                nuevo_idx_izq = len(self.lista_de_pasos)
+                nuevo_idx_der = len(self.lista_de_pasos) + 1
+                self.lista_de_pasos.append((paso_izq, num_pos, None))
+                self.lista_de_pasos.append((paso_der, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.update([nuevo_idx_izq, nuevo_idx_der])
+                return True
 
             case LogicRules.AND_ELIMINATION_1:
-                # Logic for AND_ELIMINATION_1 rule (∧E1)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                izquierda = current_paso.resolvente.left
+                paso_izq = Paso(contexto=current_paso.contexto, resolvente=izquierda)
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_izq, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.AND_ELIMINATION_2:
-                # Logic for AND_ELIMINATION_2 rule (∧E2)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                derecha = current_paso.resolvente.right
+                paso_der = Paso(contexto=current_paso.contexto, resolvente=derecha)
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_der, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.IMPLICATION_INTRODUCTION:
-                # Logic for IMPLICATION_INTRODUCTION rule (→I)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                tau = current_paso.resolvente.premise
+                sigma = current_paso.resolvente.conclusion
+                paso_nuevo = Paso(contexto=current_paso.contexto + [tau], resolvente=sigma)
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_nuevo, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.IMPLICATION_ELIMINATION:
-                # Logic for IMPLICATION_ELIMINATION rule (→E)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                tau = getFormula()
+                sigma = current_paso.resolvente
+                paso_tau = Paso(contexto=current_paso.contexto, resolvente=tau)
+                paso_impl = Paso(contexto=current_paso.contexto, resolvente=tau.impl(sigma))
+                idx_tau = len(self.lista_de_pasos)
+                idx_impl = len(self.lista_de_pasos) + 1
+                self.lista_de_pasos.append((paso_tau, num_pos, None))
+                self.lista_de_pasos.append((paso_impl, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.update([idx_tau, idx_impl])
+                return True
 
             case LogicRules.OR_INTRODUCTION_1:
-                # Logic for OR_INTRODUCTION_1 rule (∨I1)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                a = current_paso.resolvente.left
+                paso_a = Paso(contexto=current_paso.contexto, resolvente=a)
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_a, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.OR_INTRODUCTION_2:
-                # Logic for OR_INTRODUCTION_2 rule (∨I2)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                b = current_paso.resolvente.right
+                paso_b = Paso(contexto=current_paso.contexto, resolvente=b)
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_b, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.OR_ELIMINATION:
-                # Logic for OR_ELIMINATION rule (∨E)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                a = getFormula()
+                b = getFormula()
+                sigma = current_paso.resolvente
+                paso_or = Paso(contexto=current_paso.contexto, resolvente=a.or_(b))
+                paso_a = Paso(contexto=current_paso.contexto + [a], resolvente=sigma)
+                paso_b = Paso(contexto=current_paso.contexto + [b], resolvente=sigma)
+                idx_or = len(self.lista_de_pasos)
+                idx_a = len(self.lista_de_pasos) + 1
+                idx_b = len(self.lista_de_pasos) + 2
+                self.lista_de_pasos.append((paso_or, num_pos, None))
+                self.lista_de_pasos.append((paso_a, num_pos, None))
+                self.lista_de_pasos.append((paso_b, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.update([idx_or, idx_a, idx_b])
+                return True
 
             case LogicRules.NEGATION_INTRODUCTION:
-                # Logic for NEGATION_INTRODUCTION rule (¬I)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                sigma = current_paso.resolvente.prop
+                paso_bottom = Paso(contexto=current_paso.contexto + [sigma], resolvente=BOTTOM())
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_bottom, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.NEGATION_ELIMINATION:
-                # Logic for NEGATION_ELIMINATION rule (¬E)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                a = getFormula()
+                paso_a = Paso(contexto=current_paso.contexto, resolvente=a)
+                paso_neg_a = Paso(contexto=current_paso.contexto, resolvente=a.neg())
+                idx_a = len(self.lista_de_pasos)
+                idx_neg_a = len(self.lista_de_pasos) + 1
+                self.lista_de_pasos.append((paso_a, num_pos, None))
+                self.lista_de_pasos.append((paso_neg_a, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.update([idx_a, idx_neg_a])
+                return True
 
             case LogicRules.BOTTOM_ELIMINATION:
-                # Logic for BOTTOM_ELIMINATION rule (⊥E)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                tau = getFormula()
+                paso_bottom = Paso(contexto=current_paso.contexto, resolvente=BOTTOM())
+                paso_tau = Paso(contexto=current_paso.contexto, resolvente=tau)
+                idx_bottom = len(self.lista_de_pasos)
+                idx_tau = len(self.lista_de_pasos) + 1
+                self.lista_de_pasos.append((paso_bottom, num_pos, None))
+                self.lista_de_pasos.append((paso_tau, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.update([idx_bottom, idx_tau])
+                return True
 
             case LogicRules.MODUS_TOLLENS:
-                # Logic for MODUS_TOLLENS rule (MT)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                sigma = current_paso.resolvente.prop
+                paso_impl = Paso(contexto=current_paso.contexto, resolvente=sigma.impl(BOTTOM()))
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_impl, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.NEGATION_NEGATION_INTRODUCTION:
-                # Logic for NEGATION_NEGATION_INTRODUCTION rule (¬¬I)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                neg_sigma = current_paso.resolvente.prop
+                paso_neg_neg = Paso(contexto=current_paso.contexto, resolvente=neg_sigma.neg())
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_neg_neg, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.NEGATION_NEGATION_ELIMINATION:
-                # Logic for NEGATION_NEGATION_ELIMINATION rule (¬¬E)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                neg_neg_sigma = current_paso.resolvente.prop
+                paso_sigma = Paso(contexto=current_paso.contexto, resolvente=neg_neg_sigma.prop)
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_sigma, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.EXCLUDED_MIDDLE:
-                # Logic for EXCLUDED_MIDDLE rule (LEM)
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                a = current_paso.resolvente.left
+                paso_or = Paso(contexto=current_paso.contexto, resolvente=a.or_(a.neg()))
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_or, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case LogicRules.PBC:
-                # Logic for PBC rule
-                print(f"Logic for {regla.value} not yet implemented.")
-                return False
+                sigma = current_paso.resolvente
+                paso_bottom = Paso(contexto=current_paso.contexto + [sigma.neg()], resolvente=BOTTOM())
+                nuevo_idx = len(self.lista_de_pasos)
+                self.lista_de_pasos.append((paso_bottom, num_pos, None))
+                self.pasos_a_resolver.remove(num_pos)
+                self.pasos_a_resolver.add(nuevo_idx)
+                return True
 
             case _:
-                # This case should ideally not be reached if all LogicRules are covered.
-                print(f"Error: Regla desconocida '{regla.value}'.")
                 return False
 
     def mostrar_prueba(self):
@@ -371,12 +446,63 @@ class Resolver:
             print("No steps in the proof yet.")
             return
 
-        # Create a copy and reverse it for display
+        # Mostrar pasos en orden inverso
         reversed_steps = list(reversed(self.lista_de_pasos))
-        for i, (paso, original_idx, rule) in enumerate(reversed_steps):
-            status = " (UNRESOLVED)" if original_idx in self.pasos_a_resolver else ""
-            references_str = f" [{', '.join(map(str, paso.references))}]" if paso.references else ""
-            print(f"[{original_idx}]{status}: {paso.toString()} by {rule.value}{references_str}")
+        for i, (paso, idx_original, regla_aplicada) in enumerate(reversed_steps):
+            real_index = len(self.lista_de_pasos) - 1 - i
+            status = " (UNRESOLVED)" if idx_original in self.pasos_a_resolver else ""
+            references_str = ""
+            regla_str = regla_aplicada.value if regla_aplicada else "No rule"
+            print(f"[{idx_original}]{status}: {paso.toString()} by {regla_str}{references_str}")
+
         print("------------------------------------------")
-        print(f"Steps to resolve: {sorted(list(self.pasos_a_resolver))}")
-        print(f"Proven propositions: {[pretty_print(p) for p in self.proposiciones_probadas]}")
+
+        # Mostrar las fórmulas sin resolver con su representación
+        if self.pasos_a_resolver:
+            print("Steps to resolve:")
+            for idx in sorted(self.pasos_a_resolver):
+                try:
+                    paso, _, _ = self.lista_de_pasos[idx]
+                    formula_str = pretty_print(paso.resolvente)
+                    print(f"  [{idx}]: {formula_str}")
+                except IndexError:
+                    print(f"  [{idx}]: <Invalid index>")
+        else:
+            print("All steps resolved!")
+
+def main():
+    """
+    Main function to manage the natural deduction proof process.
+    """
+    print("Welcome to the Natural Deduction Resolver!")
+    
+    # Get context and resolvent from the user
+    contexto = getContext()
+    resolvente = getResolvent()
+    resolver = Resolver(contexto, resolvente)
+
+    while not resolver.isProofComplete():
+        resolver.mostrar_prueba()
+        print("\nSteps to resolve:", sorted(resolver.pasos_a_resolver))
+        
+        try:
+            # Prompt user to select a step and a rule
+            num_pos = int(input("Enter the step number to apply a rule: "))
+            print("Available rules:")
+            for rule in LogicRules:
+                print(f"- {rule.value}")
+            regla_input = input("Enter the rule to apply: ").strip()
+            regla = LogicRules(regla_input)
+
+            # Apply the rule
+            if resolver.aplicarRegla(num_pos, regla):
+                print(f"Rule '{regla.value}' applied successfully to step {num_pos}.")
+            else:
+                print(f"Failed to apply rule '{regla.value}' to step {num_pos}.")
+        except (ValueError, KeyError):
+            print("Invalid input. Please try again.")
+
+    print("\nProof complete!")
+    resolver.mostrar_prueba()
+
+main()
