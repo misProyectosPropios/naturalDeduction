@@ -1,53 +1,57 @@
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Union, List, Set, Tuple
 from enum import Enum
 
-class Prop: pass
+class Prop: 
+    @abstractmethod
+    def prettify(self):
+        pass
+
 
 @dataclass(eq=True, frozen=True)
 class NEG(Prop):
     prop: Prop
+    
+    def prettify(self):
+        f"¬({self.prettify(self.prop)})"
 
 @dataclass(eq=True, frozen=True)
 class AND(Prop):
     left: Prop
     right: Prop
+    
+    def prettify(self):
+        return f"({self.left.prettify()} ∧ {self.right.prettify()})"
 
 @dataclass(eq=True, frozen=True)
 class OR(Prop):
     left: Prop
     right: Prop
+    
+    def prettify(self):
+        return f"({self.left.prettify()} ∨ {self.right.prettify()})"
 
 @dataclass(eq=True, frozen=True)
 class IMPLIES(Prop):
     premise: Prop
     conclusion: Prop
+    
+    def prettify(self):
+        return f"({self.premise.prettify()} → {self.conclusion.prettify()})"
 
 @dataclass(eq=True, frozen=True)
 class BOTTOM(Prop):
-    pass
+    def prettify(self):
+        return "⊥"
 
 @dataclass(eq=True, frozen=True)
 class VAR(Prop):
     name: str
 
-# --- Pretty Print Function ---
-def pretty_print(p: Prop) -> str:
-    match p:
-        case VAR(name):
-            return name
-        case NEG(expr):
-            return f"¬({pretty_print(expr)})"
-        case AND(left, right):
-            return f"({pretty_print(left)} ∧ {pretty_print(right)})"
-        case OR(left, right):
-            return f"({pretty_print(left)} ∨ {pretty_print(right)})"
-        case IMPLIES(premise, conclusion):
-            return f"({pretty_print(premise)} → {pretty_print(conclusion)})" # Changed ⇒ to → for consistency
-        case BOTTOM():
-            return "⊥"
-        case _:
-            return "UNKNOWN_PROP_TYPE" # Fallback for unexpected types
+    def prettify(self):
+        return self.name
+
 
 # --- Logic Rules Enum ---
 class LogicRules(Enum):
@@ -76,7 +80,6 @@ class LogicRules(Enum):
 
 # --- Helper Functions for User Input Parsing (from previous interactions) ---
 def parse_formula(expr: str) -> Prop:
-    # Ambiente seguro con solo los constructores disponibles
     allowed_globals = {
         'VAR': VAR,
         'AND': AND,
@@ -147,8 +150,8 @@ class Paso:
             raise TypeError("'resolvente' must be an instance of Prop.")
 
     def toString(self) -> str:
-        contexto_str = ', '.join(pretty_print(prop) for prop in self.contexto)
-        return f"{contexto_str} ⊢ {pretty_print(self.resolvente)}"
+        contexto_str = ', '.join(prop.prettify() for prop in self.contexto)
+        return f"{contexto_str} ⊢ {self.resolvente.prettify()}"
 
     def isInTheContext(self, proposition: Prop) -> bool:
         # Devuelve true si la proposición está en el contexto
@@ -255,7 +258,7 @@ class Resolver:
             print(f"Error: La regla '{regla.value}' no es estructuralmente aplicable a la proposición {pretty_print(current_paso.resolvente)}.")
             return False
 
-        print(f"Aplicando regla '{regla.value}' al paso {num_pos} (Prop: {pretty_print(current_paso.resolvente)})...")
+        print(f"Aplicando regla '{regla.value}' al paso {num_pos} (Prop: {current_paso.resolvente.prettify})...")
 
         match regla:
             case LogicRules.AXIOM:
@@ -463,7 +466,7 @@ class Resolver:
             for idx in sorted(self.pasos_a_resolver):
                 try:
                     paso, _, _ = self.lista_de_pasos[idx]
-                    formula_str = pretty_print(paso.resolvente)
+                    formula_str = paso.resolvente.prettify()
                     print(f"  [{idx}]: {formula_str}")
                 except IndexError:
                     print(f"  [{idx}]: <Invalid index>")
