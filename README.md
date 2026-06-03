@@ -1,32 +1,33 @@
-¡Excelente idea! Una buena documentación es crucial para cualquier proyecto de código. Aquí te presento una plantilla de documentación de código en Markdown, pensada para ser clara, concisa y útil, especialmente para tus clases Prop, Paso, y Resolvedor, junto con tus constantes de reglas.
+# Proyecto de Lógica Natural
 
-Puedes usar esta plantilla en un archivo README.md o en archivos de documentación específicos para cada componente.
-
-Documentación del Proyecto de Lógica Natural
-
-Este documento describe la estructura y el uso de las clases y funciones principales para la manipulación de proposiciones y la verificación de pasos en la Deducción Natural.
-
-1. Visión General del Proyecto
+## Visión General del Proyecto
 
 Este proyecto implementa una base para un sistema de deducción natural, permitiendo la representación de proposiciones lógicas, la definición de pasos de inferencia y la verificación de la aplicación de las reglas de inferencia tanto para la lógica intuicionista como para la clásica.
 
-Componentes Principales
+## Componentes Principales
 
-    Prop: Clase para construir y representar proposiciones lógicas.
+### Prop: 
 
-    Paso: Clase para representar un paso individual en una demostración, con su contexto y resolvente. Incluye métodos para verificar la aplicación de reglas de inferencia.
+Clase para construir y representar proposiciones lógicas.
 
-    Resolvedor: (Aún por implementar completamente) Clase que gestionará la secuencia de pasos para construir y verificar una demostración completa, posiblemente utilizando un DAG.
+### Paso: 
+Clase para representar un paso individual en una demostración, con su contexto y resolvente. Incluye métodos para verificar la aplicación de reglas de inferencia.
 
-    Constantes de Reglas: Objetos congelados (Object.freeze) que definen los nombres canónicos de las reglas de inferencia para lógica intuicionista y clásica.
+### Resolvedor: 
 
-2. Clases y Funciones
+(Aún por implementar completamente) Clase que gestionará la secuencia de pasos para construir y verificar una demostración completa, posiblemente utilizando un DAG.
 
-2.1. Clase Prop
+### Constantes de Reglas: 
+
+Objetos congelados (Object.freeze) que definen los nombres canónicos de las reglas de inferencia para lógica intuicionista y clásica.
+
+## Clases y Funciones
+
+### Clase Prop
 
 Representa una proposición lógica. Puede ser una variable, una negación, una implicación, una conjunción o una disyunción, o el símbolo de falsedad (bottom).
 
-Constructor:
+#### Constructor:
 new Prop(type: string, ...args: Prop[] | string[])
 
     type: El tipo de la proposición ('Var', 'Neg', 'Impl', 'And', 'Or', 'Bottom').
@@ -41,41 +42,41 @@ new Prop(type: string, ...args: Prop[] | string[])
 
         Si type es 'Impl', 'And', o 'Or', el primer y segundo argumento son las proposiciones izquierda y derecha, respectivamente (Prop).
 
-Métodos de Instancia:
+#### Métodos de Instancia:
 
-    impl(otherProp: Prop): Prop
++ impl(otherProp: Prop): Prop
 
         Crea una nueva proposición que es la implicación de this (antecedente) y otherProp (consecuente).
 
         Retorna: Prop
 
-    and(otherProp: Prop): Prop
++ and(otherProp: Prop): Prop
 
         Crea una nueva proposición que es la conjunción de this y otherProp.
 
         Retorna: Prop
 
-    or(otherProp: Prop): Prop
++ or(otherProp: Prop): Prop
 
         Crea una nueva proposición que es la disyunción de this y otherProp.
 
         Retorna: Prop
 
-    neg(): Prop
++ neg(): Prop
 
         Crea una nueva proposición que es la negación de this.
 
         Retorna: Prop
 
-    toString(): string
++ toString(): string
 
         Devuelve una representación en cadena de la proposición, utilizando símbolos lógicos Unicode (¬, →, ∧, ∨, ⊥).
 
         Retorna: string
 
-Métodos Estáticos:
+#### Métodos Estáticos:
 
-    Prop.equals(p1: Prop, p2: Prop): boolean
++ Prop.equals(p1: Prop, p2: Prop): boolean
 
         Compara estructuralmente dos instancias de Prop para determinar si son lógicamente equivalentes en su forma (misma estructura y variables).
 
@@ -87,19 +88,20 @@ Métodos Estáticos:
 
         Retorna: boolean
 
-Funciones de Ayuda (Globales):
+#### Funciones de Ayuda (Globales):
 
-    Var(name: string): Prop
++ Var(name: string): Prop
 
         Función de conveniencia para crear una nueva variable proposicional.
 
-    Bottom(): Prop
++ Bottom(): Prop
 
         Función de conveniencia para crear el símbolo de falsedad (Bottom).
 
-Ejemplo de Uso:
-JavaScript
 
+#### Ejemplo de Uso:
+
+```JavaScript
 const p = Var("p");
 const q = Var("q");
 const r = Var("r");
@@ -111,27 +113,28 @@ const bottomProp = Bottom(); // ⊥
 
 console.log(pImplQ.toString());
 console.log(Prop.equals(p.and(q), Var("p").and(Var("q")))); // true
+```
 
-2.2. Clase Paso
+### Clase Paso
 
 Representa un paso individual dentro de una demostración de deducción natural. Contiene el contexto (proposiciones asumidas o ya probadas) y la proposición resolvente (la proposición derivada en este paso).
 
-Constructor:
-new Paso(contexto: Prop[], resolvente: Prop)
+#### Constructor:
++ `new Paso(contexto: Prop[], resolvente: Prop)`
 
     contexto: Un array de instancias de Prop que representa las premisas o proposiciones ya establecidas en este punto de la demostración.
 
     resolvente: Una instancia de Prop que es la proposición derivada en este paso.
 
-Métodos de Instancia:
+#### Métodos de Instancia:
 
-    toString(): string
++ `toString(): string`
 
         Devuelve una representación en cadena del paso lógico en el formato "Contexto ⊢ Resolvente", utilizando el símbolo unicode ⊢.
 
         Retorna: string
 
-    isAbleToApplyRule(ruleName: string, ...premises: Prop[]): boolean
++ `isAbleToApplyRule(ruleName: string, ...premises: Prop[]): boolean`
 
         Verifica si este Paso actual es una aplicación válida de la ruleName especificada, dadas las premises adicionales que la regla pueda requerir.
 
@@ -153,7 +156,7 @@ Métodos de Instancia:
 
             Nota sobre reglas de descarga (→I, ∨E, ¬I, PBC): La verificación de estas reglas es una simplificación en este modelo. En un sistema de prueba completo, estas requerirían un mecanismo de sub-pruebas para verificar que las proposiciones intermedias (derivedProp, derivedContradiction, conclusionFromLeft/Right) fueron realmente derivadas bajo las asunciones temporales y luego descargadas. Aquí, la función solo verifica la forma del paso dada la resolvente y las premises proporcionadas.
 
-Reglas Soportadas por isAbleToApplyRule:
+##### Reglas Soportadas por isAbleToApplyRule:
 
     Básicas (Intuicionistas):
 
@@ -192,7 +195,7 @@ Reglas Soportadas por isAbleToApplyRule:
         ClassicalRules.PBC (Proof by Contradiction)
 
 Ejemplo de Uso:
-JavaScript
+```JavaScript
 
 const p = Var("p");
 const q = Var("q");
@@ -208,34 +211,35 @@ console.log(pasoImplE.isAbleToApplyRule(IntuicionisticRules.IMPLICATION_ELIMINAT
 const pOrNegP = p.or(p.neg());
 const pasoLEM = new Paso([], pOrNegP);
 console.log(pasoLEM.isAbleToApplyRule(ClassicalRules.EXCLUDED_MIDDLE, p)); // true
+```
 
-2.3. Clase Resolvedor
+### Clase Resolvedor
 
-(Aún por implementar completamente)
+TODO
 
 Esta clase está diseñada para gestionar la secuencia de Pasos que forman una demostración. Su objetivo es construir un Grafo Acíclico Dirigido (DAG) de pasos resueltos, donde cada nodo es un Paso y las aristas representan las dependencias de las premisas.
 
 Funcionalidades Previstas:
 
-    Almacenar la secuencia de Pasos de la demostración.
+- Almacenar la secuencia de Pasos de la demostración.
 
-    Mantener el estado del "contexto" de proposiciones disponibles en cada línea.
+- Mantener el estado del "contexto" de proposiciones disponibles en cada línea.
 
-    Validar la corrección de cada Paso agregado utilizando los métodos isAbleToApplyRule de la clase Paso.
+- Validar la corrección de cada Paso agregado utilizando los métodos isAbleToApplyRule de la clase Paso.
 
-    Gestionar asunciones y la descarga de las mismas en el contexto de sub-pruebas para reglas como →I, ∨E, ¬I, y PBC.
+- Gestionar asunciones y la descarga de las mismas en el contexto de sub-pruebas para reglas como →I, ∨E, ¬I, y PBC.
 
-    (Opcional) Implementar búsqueda de demostraciones o asistencia.
+- (Opcional) Implementar búsqueda de demostraciones o asistencia.
 
-3. Constantes de Reglas
+### Constantes de Reglas
 
 Estos objetos congelados proporcionan nombres canónicos para las reglas de deducción natural, facilitando la legibilidad y el mantenimiento del código al evitar cadenas mágicas.
 
-3.1. IntuicionisticRules
+#### IntuicionisticRules
 
 Contiene las reglas fundamentales y algunas derivadas comunes en lógica intuicionista.
-JavaScript
 
+```JavaScript
 const IntuicionisticRules = Object.freeze({
     AXIOM: "Axiom",
     AND_INTRODUCTION: "∧I",
@@ -250,11 +254,13 @@ const IntuicionisticRules = Object.freeze({
     MODUS_TOLLENS: "MT",
     NEGATION_NEGATION_INTRODUCTION: "¬¬I"
 });
+```
 
-3.2. ClassicalRules
+#### ClassicalRules
 
 Extiende IntuicionisticRules para incluir axiomas y reglas específicas de la lógica clásica. Utiliza la sintaxis de propagación (...) para heredar las reglas intuicionistas y añade las propias.
-JavaScript
+
+```JavaScript
 
 const ClassicalRules = Object.freeze({
     ...IntuicionisticRules,
@@ -263,16 +269,14 @@ const ClassicalRules = Object.freeze({
     PBC: "PBC"                            // Prueba por Contradicción
 });
 
-Ejemplo de Uso:
-JavaScript
-
 console.log(IntuicionisticRules.IMPLICATION_INTRODUCTION); // →I
 console.log(ClassicalRules.EXCLUDED_MIDDLE);             // LEM
+```
 
 4. Estructura de Archivos Recomendada
 
 Para un proyecto más grande, podrías organizar tu código de la siguiente manera:
-
+```
 .
 ├── src/
 │   ├── models/
@@ -283,8 +287,9 @@ Para un proyecto más grande, podrías organizar tu código de la siguiente mane
 │   │   └── RuleNames.js   // Constantes IntuicionisticRules, ClassicalRules
 │   └── index.js           // Punto de entrada o archivo principal que importa y usa todo
 └── README.md              // Este archivo de documentación
+```
 
-5. Cómo Contribuir / Próximos Pasos
+# Cómo Contribuir / Próximos Pasos
 
     Implementación del Resolvedor: Desarrollar la lógica para construir y verificar demostraciones completas, incluyendo la gestión de contextos y el seguimiento de asunciones/descargas.
 
