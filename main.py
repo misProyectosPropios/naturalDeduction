@@ -138,8 +138,38 @@ class Rule:
     applicable: Callable[[Paso], bool]
     handler: Callable[['Resolver', int, Paso], bool]
     description: str = ""
+    precondition: str = ""
+    postcondition: str = ""
 
-# --- Resolver Class ---
+
+def make_rule(
+    key: str,
+    value: str,
+    applicable: Callable[[Paso], bool],
+    make_substeps: Optional[Callable[[Paso], List[Paso]]] = None,
+    handler: Optional[Callable[['Resolver', int, Paso], bool]] = None,
+    description: str = "",
+    precondition: str = "",
+    postcondition: str = ""
+) -> Rule:
+    if handler is None:
+        if make_substeps is None:
+            raise ValueError("Either handler or make_substeps must be provided.")
+
+        def handler(self, num_pos: int, current_paso: Paso) -> bool:
+            return self._try_rule(num_pos, current_paso, make_substeps)
+
+    return Rule(
+        key=key,
+        value=value,
+        applicable=applicable,
+        handler=handler,
+        description=description,
+        precondition=precondition,
+        postcondition=postcondition,
+    )
+
+
 class Resolver:
     """
     Manages the state of a natural deduction proof.
@@ -239,7 +269,14 @@ class Resolver:
             self._mark_resolved(num_pos, self._resolve_rule(LogicRules.AXIOM))
             return True
         return False
-    
+
+    def _try_rule(self, num_pos: int, current_paso: Paso, make_substeps: Callable[[Paso], List[Paso]]) -> bool:
+        """Generic rule application for rules that generate substeps."""
+        substeps = make_substeps(current_paso)
+        self._add_substeps(num_pos, substeps)
+        self.pasos_a_resolver.discard(num_pos)
+        return True
+
     def _try_and_introduction(self, num_pos: int, current_paso: Paso) -> bool:
         """Try to apply AND_INTRODUCTION rule."""
         substeps = [
@@ -438,124 +475,171 @@ class Resolver:
 
 def create_default_rules() -> List[Rule]:
     return [
-        Rule(
+        make_rule(
             key="AXIOM",
             value="Axiom",
             applicable=lambda paso: paso.resolvente in paso.contexto,
             handler=Resolver._try_axiom,
-            description="Resolve a goal directly if it is in the current context."
+            description="Resolve a goal directly if it is in the current context.",
+            precondition="The goal must already appear in the current context.",
+            postcondition="The goal is discharged immediately."
         ),
-        Rule(
+        make_rule(
             key="AND_INTRODUCTION",
             value="∧I",
             applicable=lambda paso: isinstance(paso.resolvente, AND),
-            handler=Resolver._try_and_introduction,
-            description="Introduce a conjunction by proving both conjuncts."
+            make_substeps=lambda paso: [
+                Paso(contexto=paso.contexto, resolvente=paso.resolvente.left),
+                Paso(contexto=paso.contexto, resolvente=paso.resolvente.right)
+            ],
+            description="Introduce a conjunction by proving both conjuncts.",
+            precondition="The goal must be a conjunction.",
+            postcondition="Both conjuncts become new subgoals."
         ),
-        Rule(
+        make_rule(
             key="AND_ELIMINATION_1",
             value="∧E1",
             applicable=lambda paso: isinstance(paso.resolvente, AND),
-            handler=Resolver._try_and_elimination_1,
-            description="Extract the left conjunct from a conjunction."
+            make_substeps=lambda paso: [
+                Paso(contexto=paso.contexto, resolvente=paso.resolvente.left)
+            ],
+            description="Extract the left conjunct from a conjunction.",
+            precondition="The goal must be a conjunction.",
+            postcondition="Left conjunct becomes the new subgoal."
         ),
-        Rule(
+        make_rule(
             key="AND_ELIMINATION_2",
             value="∧E2",
             applicable=lambda paso: isinstance(paso.resolvente, AND),
-            handler=Resolver._try_and_elimination_2,
-            description="Extract the right conjunct from a conjunction."
+            make_substeps=lambda paso: [
+                Paso(contexto=paso.contexto, resolvente=paso.resolvente.right)
+            ],
+            description="Extract the right conjunct from a conjunction.",
+            precondition="The goal must be a conjunction.",
+            postcondition="Right conjunct becomes the new subgoal."
         ),
-        Rule(
+        make_rule(
             key="IMPLICATION_INTRODUCTION",
             value="→I",
             applicable=lambda paso: isinstance(paso.resolvente, IMPLIES),
-            handler=Resolver._try_implication_introduction,
-            description="Introduce an implication by assuming its premise."
+            make_substeps=lambda paso: [
+                Paso(contexto=paso.contexto + [paso.resolvente.premise], resolvente=paso.resolvente.conclusion)
+            ],
+            description="Introduce an implication by assuming its premise.",
+            precondition="The goal must be an implication.",
+            postcondition="The implication is proven by proving the conclusion under the premise assumption."
         ),
-        Rule(
+        make_rule(
             key="IMPLICATION_ELIMINATION",
             value="→E",
             applicable=lambda paso: True,
             handler=Resolver._try_implication_elimination,
-            description="Use implication elimination to derive a conclusion."
+            description="Use implication elimination to derive a conclusion.",
+            precondition="Requires a chosen antecedent formula.",
+            postcondition="Creates subgoals to prove the antecedent and the implication conclusion."
         ),
-        Rule(
+        make_rule(
             key="OR_INTRODUCTION_1",
             value="∨I1",
             applicable=lambda paso: isinstance(paso.resolvente, OR),
-            handler=Resolver._try_or_introduction_1,
-            description="Introduce a disjunction by proving the left disjunct."
+            make_substeps=lambda paso: [
+                Paso(contexto=paso.contexto, resolvente=paso.resolvente.left)
+            ],
+            description="Introduce a disjunction by proving the left disjunct.",
+            precondition="The goal must be a disjunction.",
+            postcondition="The left disjunct becomes a new subgoal."
         ),
-        Rule(
+        make_rule(
             key="OR_INTRODUCTION_2",
             value="∨I2",
             applicable=lambda paso: isinstance(paso.resolvente, OR),
-            handler=Resolver._try_or_introduction_2,
-            description="Introduce a disjunction by proving the right disjunct."
+            make_substeps=lambda paso: [
+                Paso(contexto=paso.contexto, resolvente=paso.resolvente.right)
+            ],
+            description="Introduce a disjunction by proving the right disjunct.",
+            precondition="The goal must be a disjunction.",
+            postcondition="The right disjunct becomes a new subgoal."
         ),
-        Rule(
+        make_rule(
             key="OR_ELIMINATION",
             value="∨E",
             applicable=lambda paso: True,
             handler=Resolver._try_or_elimination,
-            description="Eliminate a disjunction by proving the goal from both disjuncts."
+            description="Eliminate a disjunction by proving the goal from both disjuncts.",
+            precondition="Requires two alternative assumptions.",
+            postcondition="Creates subgoals for both disjunct cases."
         ),
-        Rule(
+        make_rule(
             key="NEGATION_INTRODUCTION",
             value="¬I",
             applicable=lambda paso: isinstance(paso.resolvente, NEG),
             handler=Resolver._try_negation_introduction,
-            description="Introduce a negation by proving a contradiction from the negated formula."
+            description="Introduce a negation by proving a contradiction from the negated formula.",
+            precondition="The goal must be a negation.",
+            postcondition="Assumes the positive formula and creates a contradiction subgoal."
         ),
-        Rule(
+        make_rule(
             key="NEGATION_ELIMINATION",
             value="¬E",
             applicable=lambda paso: True,
             handler=Resolver._try_negation_elimination,
-            description="Eliminate a negation to derive a contradiction."
+            description="Eliminate a negation to derive a contradiction.",
+            precondition="Requires a chosen formula to test against its negation.",
+            postcondition="Creates a formula and its negation as subgoals."
         ),
-        Rule(
+        make_rule(
             key="BOTTOM_ELIMINATION",
             value="⊥E",
             applicable=lambda paso: True,
             handler=Resolver._try_bottom_elimination,
-            description="Derive any formula from a contradiction."
+            description="Derive any formula from a contradiction.",
+            precondition="Requires a contradiction to be handled.",
+            postcondition="Creates a contradiction subgoal and the desired conclusion."
         ),
-        Rule(
+        make_rule(
             key="MODUS_TOLLENS",
             value="MT",
             applicable=lambda paso: isinstance(paso.resolvente, NEG),
             handler=Resolver._try_modus_tollens,
-            description="Infer a negated antecedent from an implication and a negated consequent."
+            description="Infer a negated antecedent from an implication and a negated consequent.",
+            precondition="The goal must be a negation.",
+            postcondition="Creates the implication to contradiction subgoal."
         ),
-        Rule(
+        make_rule(
             key="NEGATION_NEGATION_INTRODUCTION",
             value="¬¬I",
             applicable=lambda paso: isinstance(paso.resolvente, NEG) and isinstance(paso.resolvente.prop, NEG),
             handler=Resolver._try_negation_negation_introduction,
-            description="Introduce double negation."
+            description="Introduce double negation.",
+            precondition="The goal must be a double negation.",
+            postcondition="Creates the inner negation as a new subgoal."
         ),
-        Rule(
+        make_rule(
             key="NEGATION_NEGATION_ELIMINATION",
             value="¬¬E",
             applicable=lambda paso: isinstance(paso.resolvente, NEG) and isinstance(paso.resolvente.prop, NEG),
             handler=Resolver._try_negation_negation_elimination,
-            description="Eliminate double negation."
+            description="Eliminate double negation.",
+            precondition="The goal must be a double negation.",
+            postcondition="Creates the inner formula as a new subgoal."
         ),
-        Rule(
+        make_rule(
             key="EXCLUDED_MIDDLE",
             value="LEM",
             applicable=lambda paso: isinstance(paso.resolvente, OR) and isinstance(paso.resolvente.right, NEG) and paso.resolvente.left == paso.resolvente.right.prop,
             handler=Resolver._try_excluded_middle,
-            description="Introduce the law of excluded middle for a formula."
+            description="Introduce the law of excluded middle for a formula.",
+            precondition="The goal must be a tautological disjunction A ∨ ¬A.",
+            postcondition="Creates a tautology subgoal for the formula."
         ),
-        Rule(
+        make_rule(
             key="PBC",
             value="PBC",
             applicable=lambda paso: True,
             handler=Resolver._try_pbc,
-            description="Use proof by contradiction to infer a formula."
+            description="Use proof by contradiction to infer a formula.",
+            precondition="The goal can be assumed false to derive a contradiction.",
+            postcondition="Creates a contradiction subgoal under the negated goal."
         ),
     ]
 
@@ -565,6 +649,8 @@ def choose_rule(rules: List[Rule]) -> Rule:
     print("\nAvailable rules:")
     for idx, rule in enumerate(rules, start=1):
         print(f"  {idx}. {rule.value} - {rule.description}")
+        if rule.precondition or rule.postcondition:
+            print(f"       pre: {rule.precondition} | post: {rule.postcondition}")
 
     while True:
         rule_input = input("\nEnter the rule number or rule value: ").strip()
