@@ -1,5 +1,5 @@
 from lexer import TokenType
-from main import AND, BOTTOM, IMPLIES, NEG, OR, VAR
+from logic import AND, BOTTOM, IMPLIES, NEG, OR, VAR
 
 
 class Parser():
