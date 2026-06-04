@@ -1,7 +1,7 @@
 import unittest
-from lexer import TokenType
-from main import AND, BOTTOM, IMPLIES, NEG, OR, VAR
-from parser import Parser  # assuming your parser is in parser.py
+from src.lexer import TokenType
+from src.main import AND, BOTTOM, IMPLIES, NEG, OR, VAR
+from src.parser import Parser  # assuming your parser is in parser.py
 
 def make_token(token_type, value=None):
     """Helper to create a token object (simple namedtuple or custom class)."""
