@@ -28,7 +28,7 @@ Objetos congelados (Object.freeze) que definen los nombres canónicos de las reg
 Representa una proposición lógica. Puede ser una variable, una negación, una implicación, una conjunción o una disyunción, o el símbolo de falsedad (bottom).
 
 #### Constructor:
-new Prop(type: string, ...args: Prop[] | string[])
+`new Prop(type: string, ...args: Prop[] | string[])`
 
     type: El tipo de la proposición ('Var', 'Neg', 'Impl', 'And', 'Or', 'Bottom').
 
@@ -44,31 +44,31 @@ new Prop(type: string, ...args: Prop[] | string[])
 
 #### Métodos de Instancia:
 
-+ impl(otherProp: Prop): Prop
++ `impl(otherProp: Prop): Prop`
 
         Crea una nueva proposición que es la implicación de this (antecedente) y otherProp (consecuente).
 
         Retorna: Prop
 
-+ and(otherProp: Prop): Prop
++ `and(otherProp: Prop): Prop`
 
         Crea una nueva proposición que es la conjunción de this y otherProp.
 
         Retorna: Prop
 
-+ or(otherProp: Prop): Prop
++ `or(otherProp: Prop): Prop`
 
         Crea una nueva proposición que es la disyunción de this y otherProp.
 
         Retorna: Prop
 
-+ neg(): Prop
++ `neg(): Prop`
 
         Crea una nueva proposición que es la negación de this.
 
         Retorna: Prop
 
-+ toString(): string
++ `toString(): string`
 
         Devuelve una representación en cadena de la proposición, utilizando símbolos lógicos Unicode (¬, →, ∧, ∨, ⊥).
 
@@ -76,7 +76,7 @@ new Prop(type: string, ...args: Prop[] | string[])
 
 #### Métodos Estáticos:
 
-+ Prop.equals(p1: Prop, p2: Prop): boolean
++ `Prop.equals(p1: Prop, p2: Prop): boolean`
 
         Compara estructuralmente dos instancias de Prop para determinar si son lógicamente equivalentes en su forma (misma estructura y variables).
 
@@ -90,11 +90,11 @@ new Prop(type: string, ...args: Prop[] | string[])
 
 #### Funciones de Ayuda (Globales):
 
-+ Var(name: string): Prop
++ `Var(name: string): Prop`
 
         Función de conveniencia para crear una nueva variable proposicional.
 
-+ Bottom(): Prop
++ `Bottom(): Prop`
 
         Función de conveniencia para crear el símbolo de falsedad (Bottom).
 
