@@ -113,9 +113,12 @@
     </div>
 </div>
 
-<script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script type="module">
+import { initPython, normalizeFormula, tokenizeFormula, parseFormulaString, formulaToString, applyRuleToStep, validateInput } from './src/formula.js';
+
 const wasmUrl = 'formula.wasm';
-const wasmInlineBase64 = 'AGFzbQEAAAABBwFgAn9/AX8DAgEABwcBA2FkZAAACgkBBwAgACABags=';
+const wasmInlineBase64 = 'AGFzbQEAAAABBwFgAn9/AX8DAgEABwcBA2FkZAAACgkBBwAgACABags='; 
 const defaultRules = [
     { key: 'AXIOM', value: 'Axiom', description: 'Resolve a goal directly if it appears in context.' },
     { key: 'AND_INTRODUCTION', value: '∧I', description: 'Introduce a conjunction by proving both conjuncts.' },
@@ -144,37 +147,40 @@ const state = {
 };
 let wasmInstance = null;
 
-async function loadWasm() {
-    if (typeof WebAssembly === 'undefined') {
-        console.warn('WebAssembly is not available in this browser.');
-        return null;
+async function initLogicEngine() {
+    // Initialize Pyodide
+    const pyodide = await loadPyodide();
+    
+    // Create src directory in virtual FS
+    pyodide.FS.mkdir('src');
+    
+    // Load the Python source files into the virtual environment
+    // We assume these files exist on your server at /src/lexer.py, etc.
+    const files = ['lexer.py', 'parser.py', 'logic.py'];
+    for (const file of files) {
+        try {
+            const response = await fetch(`./src/${file}`);
+            if (response.ok) {
+                const text = await response.text();
+                pyodide.FS.writeFile(`src/${file}`, text);
+            }
+        } catch (e) {
+            console.warn(`Could not load src/${file} into Pyodide:`, e);
+        }
     }
 
-    let moduleBytes = null;
+    // Pass the instance to our formula bridge
+    initPython(pyodide);
+
+    // Fallback/Legacy WASM loading
     try {
         const response = await fetch(wasmUrl);
         if (response.ok) {
-            moduleBytes = await response.arrayBuffer();
+            const { instance } = await WebAssembly.instantiate(await response.arrayBuffer());
+            wasmInstance = instance;
         }
-    } catch (error) {
-        console.warn('Could not fetch external WASM; falling back to inline module.', error);
-    }
-
-    if (!moduleBytes) {
-        const raw = atob(wasmInlineBase64);
-        const bytes = new Uint8Array(raw.length);
-        for (let i = 0; i < raw.length; i++) {
-            bytes[i] = raw.charCodeAt(i);
-        }
-        moduleBytes = bytes.buffer;
-    }
-
-    try {
-        const { instance } = await WebAssembly.instantiate(moduleBytes);
-        return instance;
-    } catch (error) {
-        console.error('Unable to instantiate WebAssembly module:', error);
-        return null;
+    } catch (e) {
+        console.warn('Legacy WASM failed to load, continuing with Pyodide.');
     }
 }
 
@@ -183,214 +189,6 @@ function escapeHtml(text) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-}
-
-function normalizeFormula(raw) {
-    const unquoted = raw.replace(/"([^\"]+)"/g, '$1');
-    return unquoted
-        .replace(/->/g, ' → ')
-        .replace(/\^/g, ' ∧ ')
-        .replace(/\bV\b/g, ' ∨ ')
-        .replace(/_/g, ' ⊥ ')
-        .replace(/-/g, ' ¬')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-function tokenizeFormula(input) {
-    const tokens = [];
-    const text = input.trim();
-    const re = /^("[^"]+"|->|\^|V|\-|\(|\)|_|[A-Za-z][A-Za-z0-9_]*|\s+)/;
-    let remaining = text;
-
-    while (remaining.length > 0) {
-        const match = remaining.match(re);
-        if (!match) {
-            throw new Error(`Unexpected token in formula: ${remaining}`);
-        }
-        const token = match[1];
-        remaining = remaining.slice(token.length);
-
-        if (/^\s+$/.test(token)) {
-            continue;
-        }
-
-        if (token === '->') {
-            tokens.push({ type: 'ARROW' });
-        } else if (token === '^') {
-            tokens.push({ type: 'AND' });
-        } else if (token === 'V') {
-            tokens.push({ type: 'OR' });
-        } else if (token === '-') {
-            tokens.push({ type: 'NEG' });
-        } else if (token === '(') {
-            tokens.push({ type: 'LPAREN' });
-        } else if (token === ')') {
-            tokens.push({ type: 'RPAREN' });
-        } else if (token === '_') {
-            tokens.push({ type: 'BOTTOM' });
-        } else if (/^"[^"]+"$/.test(token)) {
-            tokens.push({ type: 'VAR', value: token.slice(1, -1) });
-        } else if (/^[A-Za-z][A-Za-z0-9_]*$/.test(token)) {
-            tokens.push({ type: 'VAR', value: token });
-        } else {
-            throw new Error(`Unrecognized token: ${token}`);
-        }
-    }
-
-    tokens.push({ type: 'EOF' });
-    return tokens;
-}
-
-function parseFormulaString(raw) {
-    const tokens = tokenizeFormula(raw);
-    let pos = 0;
-
-    function peek() {
-        return tokens[pos];
-    }
-
-    function consume(expectedType) {
-        const token = tokens[pos];
-        if (!token || token.type !== expectedType) {
-            throw new Error(`Expected ${expectedType}, got ${token?.type || 'EOF'}`);
-        }
-        pos += 1;
-        return token;
-    }
-
-    function parseExpression() {
-        return parseImplication();
-    }
-
-    function parseImplication() {
-        let left = parseOr();
-        while (peek().type === 'ARROW') {
-            consume('ARROW');
-            const right = parseImplication();
-            left = { type: 'IMPLIES', left, right };
-        }
-        return left;
-    }
-
-    function parseOr() {
-        let left = parseAnd();
-        while (peek().type === 'OR') {
-            consume('OR');
-            const right = parseAnd();
-            left = { type: 'OR', left, right };
-        }
-        return left;
-    }
-
-    function parseAnd() {
-        let left = parseUnary();
-        while (peek().type === 'AND') {
-            consume('AND');
-            const right = parseUnary();
-            left = { type: 'AND', left, right };
-        }
-        return left;
-    }
-
-    function parseUnary() {
-        if (peek().type === 'NEG') {
-            consume('NEG');
-            return { type: 'NEG', prop: parseUnary() };
-        }
-        return parseAtom();
-    }
-
-    function parseAtom() {
-        const token = peek();
-        if (token.type === 'LPAREN') {
-            consume('LPAREN');
-            const node = parseExpression();
-            consume('RPAREN');
-            return node;
-        }
-        if (token.type === 'VAR') {
-            consume('VAR');
-            return { type: 'VAR', name: token.value };
-        }
-        if (token.type === 'BOTTOM') {
-            consume('BOTTOM');
-            return { type: 'BOTTOM' };
-        }
-        throw new Error(`Unexpected token in atom: ${token.type}`);
-    }
-
-    const ast = parseExpression();
-    if (peek().type !== 'EOF') {
-        throw new Error('Unexpected data after formula.');
-    }
-    return ast;
-}
-
-function formulaToString(ast) {
-    switch (ast.type) {
-        case 'VAR':
-            return ast.name;
-        case 'BOTTOM':
-            return '⊥';
-        case 'NEG':
-            return `¬(${formulaToString(ast.prop)})`;
-        case 'AND':
-            return `(${formulaToString(ast.left)} ∧ ${formulaToString(ast.right)})`;
-        case 'OR':
-            return `(${formulaToString(ast.left)} ∨ ${formulaToString(ast.right)})`;
-        case 'IMPLIES':
-            return `(${formulaToString(ast.left)} → ${formulaToString(ast.right)})`;
-        default:
-            throw new Error(`Unknown AST node type: ${ast.type}`);
-    }
-}
-
-function applyRuleToStep(step, rule) {
-    const goalAst = parseFormulaString(step.goal);
-
-    if (rule.key === 'IMPLICATION_INTRODUCTION') {
-        if (goalAst.type !== 'IMPLIES') {
-            return 'The selected step is not an implication; →I cannot be applied.';
-        }
-
-        const premise = formulaToString(goalAst.left);
-        const conclusion = formulaToString(goalAst.right);
-        step.context = [...step.context, premise];
-        step.goal = conclusion;
-        step.resolvedBy = rule.value;
-        return null;
-    }
-
-    if (rule.key === 'AXIOM') {
-        const normalizedGoal = normalizeFormula(step.goal);
-        const hasGoalInContext = step.context.some((ctx) => normalizeFormula(ctx) === normalizedGoal);
-        if (!hasGoalInContext) {
-            return 'Axiom can only be applied when the goal is already in the context.';
-        }
-        step.resolvedBy = rule.value;
-        return null;
-    }
-
-    return 'This rule is not yet implemented for UI simulation.';
-}
-
-function validateInput(raw) {
-    try {
-        const trimmed = raw.trim();
-        if (!trimmed) return false;
-
-        // Use the actual parser to validate the formula syntax
-        parseFormulaString(trimmed);
-        
-        // If WASM is available, we could use it for additional 
-        // formal verification, but for now, the JS parser is our truth.
-        return true;
-    } catch (e) {
-        // Display the specific parsing error in the UI
-        setError(e.message);
-        return false;
-    }
 }
 
 function renderFormulaList() {
@@ -640,7 +438,7 @@ function attachEvents() {
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
-    wasmInstance = await loadWasm();
+    await initLogicEngine();
     attachEvents();
     renderView();
 });
