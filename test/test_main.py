@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from main import (
     VAR, AND, OR, NEG, IMPLIES, BOTTOM, LogicRules,
     Paso, Rule, Resolver, parse_formula_with_lexer,
-    getContext, getResolvent, getFormula
+    getContext, getResolvent, getFormula, main
 )
 
 
@@ -379,6 +379,193 @@ class TestResolver(unittest.TestCase):
         self.assertFalse(result)
 
 
+class TestResolverRuleHandlers(unittest.TestCase):
+    """Test the implementation of every default rule handler."""
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_and_elimination_1(self, mock_stdout):
+        p = VAR("P")
+        q = VAR("Q")
+        resolver = Resolver([], AND(p, q))
+
+        result = resolver.aplicarRegla(0, LogicRules.AND_ELIMINATION_1)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        self.assertNotIn(0, resolver.pasos_a_resolver)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertEqual(new_paso.resolvente, p)
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_and_elimination_2(self, mock_stdout):
+        p = VAR("P")
+        q = VAR("Q")
+        resolver = Resolver([], AND(p, q))
+
+        result = resolver.aplicarRegla(0, LogicRules.AND_ELIMINATION_2)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        self.assertNotIn(0, resolver.pasos_a_resolver)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertEqual(new_paso.resolvente, q)
+
+    @patch('main.getFormula')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_implication_elimination(self, mock_stdout, mock_get_formula):
+        p = VAR("P")
+        q = VAR("Q")
+        mock_get_formula.return_value = p
+        resolver = Resolver([], q)
+
+        result = resolver.aplicarRegla(0, LogicRules.IMPLICATION_ELIMINATION)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 3)
+        new_paso1, _, _ = resolver.lista_de_pasos[1]
+        new_paso2, _, _ = resolver.lista_de_pasos[2]
+        self.assertEqual(new_paso1.resolvente, p)
+        self.assertEqual(new_paso2.resolvente, p.implies(q))
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_or_introduction_1(self, mock_stdout):
+        p = VAR("P")
+        q = VAR("Q")
+        resolver = Resolver([], OR(p, q))
+
+        result = resolver.aplicarRegla(0, LogicRules.OR_INTRODUCTION_1)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertEqual(new_paso.resolvente, p)
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_or_introduction_2(self, mock_stdout):
+        p = VAR("P")
+        q = VAR("Q")
+        resolver = Resolver([], OR(p, q))
+
+        result = resolver.aplicarRegla(0, LogicRules.OR_INTRODUCTION_2)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertEqual(new_paso.resolvente, q)
+
+    @patch('main.getFormula')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_or_elimination(self, mock_stdout, mock_get_formula):
+        p = VAR("P")
+        q = VAR("Q")
+        r = VAR("R")
+        mock_get_formula.side_effect = [p, q]
+        resolver = Resolver([], r)
+
+        result = resolver.aplicarRegla(0, LogicRules.OR_ELIMINATION)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 4)
+        new_paso1, _, _ = resolver.lista_de_pasos[1]
+        new_paso2, _, _ = resolver.lista_de_pasos[2]
+        new_paso3, _, _ = resolver.lista_de_pasos[3]
+        self.assertEqual(new_paso1.resolvente, p.or_with(q))
+        self.assertEqual(new_paso2.contexto, [p])
+        self.assertEqual(new_paso2.resolvente, r)
+        self.assertEqual(new_paso3.contexto, [q])
+        self.assertEqual(new_paso3.resolvente, r)
+
+    @patch('main.getFormula')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_negation_elimination(self, mock_stdout, mock_get_formula):
+        p = VAR("P")
+        q = VAR("Q")
+        mock_get_formula.return_value = p
+        resolver = Resolver([], q)
+
+        result = resolver.aplicarRegla(0, LogicRules.NEGATION_ELIMINATION)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 3)
+        new_paso1, _, _ = resolver.lista_de_pasos[1]
+        new_paso2, _, _ = resolver.lista_de_pasos[2]
+        self.assertEqual(new_paso1.resolvente, p)
+        self.assertEqual(new_paso2.resolvente, p.negate())
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_bottom_elimination(self, mock_stdout):
+        p = VAR("P")
+        resolver = Resolver([], p)
+
+        result = resolver.aplicarRegla(0, LogicRules.BOTTOM_ELIMINATION)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertIsInstance(new_paso.resolvente, BOTTOM)
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_modus_tollens(self, mock_stdout):
+        p = VAR("P")
+        resolver = Resolver([], NEG(p))
+
+        result = resolver.aplicarRegla(0, LogicRules.MODUS_TOLLENS)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertEqual(new_paso.resolvente, p.implies(BOTTOM()))
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_negation_negation_introduction(self, mock_stdout):
+        p = VAR("P")
+        resolver = Resolver([], NEG(NEG(p)))
+
+        result = resolver.aplicarRegla(0, LogicRules.NEGATION_NEGATION_INTRODUCTION)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertIsInstance(new_paso.resolvente, BOTTOM)
+        self.assertIn(NEG(p), new_paso.contexto)
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_negation_negation_elimination(self, mock_stdout):
+        p = VAR("P")
+        resolver = Resolver([], NEG(NEG(p)))
+
+        result = resolver.aplicarRegla(0, LogicRules.NEGATION_NEGATION_ELIMINATION)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertEqual(new_paso.resolvente, p)
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_excluded_middle(self, mock_stdout):
+        p = VAR("P")
+        resolver = Resolver([], OR(p, p.negate()))
+
+        result = resolver.aplicarRegla(0, LogicRules.EXCLUDED_MIDDLE)
+
+        self.assertTrue(result)
+        self.assertTrue(resolver.isProofComplete())
+        self.assertEqual(len(resolver.lista_de_pasos), 1)
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_apply_pbc(self, mock_stdout):
+        p = VAR("P")
+        resolver = Resolver([], p)
+
+        result = resolver.aplicarRegla(0, LogicRules.PBC)
+
+        self.assertTrue(result)
+        self.assertEqual(len(resolver.lista_de_pasos), 2)
+        new_paso, _, _ = resolver.lista_de_pasos[1]
+        self.assertIsInstance(new_paso.resolvente, BOTTOM)
+        self.assertEqual(new_paso.contexto, [p.negate()])
+
+
 class TestParseFormulaWithLexer(unittest.TestCase):
     """Test parse_formula_with_lexer function."""
     
@@ -641,6 +828,16 @@ class TestResolverIntegration(unittest.TestCase):
         # Apply AXIOM to discharge the substep and complete the proof
         self.assertTrue(resolver.aplicarRegla(1, LogicRules.AXIOM))
         self.assertTrue(resolver.isProofComplete())
+
+    @patch('builtins.input')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_main_displays_proof_complete_feedback(self, mock_stdout, mock_input):
+        mock_input.side_effect = ['"P"', '', '"P"', '0', 'Axiom']
+
+        main()
+
+        output = mock_stdout.getvalue()
+        self.assertIn("SUCCESS! PROOF COMPLETE!", output)
     
     @patch('sys.stdout', new_callable=StringIO)
     def test_prove_negation(self, mock_stdout):

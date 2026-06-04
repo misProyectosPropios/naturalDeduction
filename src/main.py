@@ -1,7 +1,12 @@
+import sys
 from dataclasses import dataclass
 from typing import Callable, Union, List, Set, Tuple, Optional
 from lexer import Lexer
 from logic import Prop, NEG, AND, OR, IMPLIES, BOTTOM, VAR, LogicRules
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 
 
@@ -259,8 +264,8 @@ class Resolver:
     
     def _mark_resolved(self, num_pos: int, regla: Rule):
         """Mark a step as resolved with the given rule."""
-        paso, _, _ = self.lista_de_pasos[num_pos]
-        self.lista_de_pasos[num_pos] = (paso, num_pos, regla)
+        paso, parent_idx, _ = self.lista_de_pasos[num_pos]
+        self.lista_de_pasos[num_pos] = (paso, parent_idx, regla)
         self.pasos_a_resolver.discard(num_pos)
     
     def _try_axiom(self, num_pos: int, current_paso: Paso) -> bool:
@@ -371,12 +376,8 @@ class Resolver:
     
     def _try_bottom_elimination(self, num_pos: int, current_paso: Paso) -> bool:
         """Try to apply BOTTOM_ELIMINATION rule."""
-        tau = getFormula()
-        substeps = [
-            Paso(contexto=current_paso.contexto, resolvente=BOTTOM()),
-            Paso(contexto=current_paso.contexto, resolvente=tau)
-        ]
-        self._add_substeps(num_pos, substeps)
+        substep = Paso(contexto=current_paso.contexto, resolvente=BOTTOM())
+        self._add_substeps(num_pos, [substep])
         self.pasos_a_resolver.discard(num_pos)
         return True
     
@@ -390,8 +391,10 @@ class Resolver:
     
     def _try_negation_negation_introduction(self, num_pos: int, current_paso: Paso) -> bool:
         """Try to apply NEGATION_NEGATION_INTRODUCTION rule."""
-        neg_sigma = current_paso.resolvente.prop
-        substep = Paso(contexto=current_paso.contexto, resolvente=neg_sigma.negate())
+        if not isinstance(current_paso.resolvente, NEG) or not isinstance(current_paso.resolvente.prop, NEG):
+            return False
+        inner_neg = current_paso.resolvente.prop
+        substep = Paso(contexto=current_paso.contexto + [inner_neg], resolvente=BOTTOM())
         self._add_substeps(num_pos, [substep])
         self.pasos_a_resolver.discard(num_pos)
         return True
@@ -406,11 +409,10 @@ class Resolver:
     
     def _try_excluded_middle(self, num_pos: int, current_paso: Paso) -> bool:
         """Try to apply EXCLUDED_MIDDLE rule."""
-        a = current_paso.resolvente.left
-        substep = Paso(contexto=current_paso.contexto, resolvente=a.or_with(a.negate()))
-        self._add_substeps(num_pos, [substep])
-        self.pasos_a_resolver.discard(num_pos)
-        return True
+        if isinstance(current_paso.resolvente, OR) and isinstance(current_paso.resolvente.right, NEG) and current_paso.resolvente.left == current_paso.resolvente.right.prop:
+            self._mark_resolved(num_pos, self._resolve_rule(LogicRules.EXCLUDED_MIDDLE))
+            return True
+        return False
     
     def _try_pbc(self, num_pos: int, current_paso: Paso) -> bool:
         """Try to apply PBC (Proof by Contradiction) rule."""
