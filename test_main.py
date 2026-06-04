@@ -4,7 +4,7 @@ from io import StringIO
 from unittest.mock import patch, MagicMock
 from main import (
     VAR, AND, OR, NEG, IMPLIES, BOTTOM, LogicRules,
-    Paso, esReglaAplicable, Resolver, parse_formula_with_lexer,
+    Paso, Rule, Resolver, parse_formula_with_lexer,
     getContext, getResolvent, getFormula
 )
 
@@ -168,7 +168,10 @@ class TestPaso(unittest.TestCase):
 
         self.assertEqual(paso.contexto, [])
         self.assertEqual(paso.resolvente, goal)
-    
+
+    def _get_default_rule(self, key: str) -> Rule:
+        return next(rule for rule in Resolver([], VAR("P")).rules if rule.key == key)
+
     def test_and_introduction_applicable(self):
         """Test AND_INTRODUCTION applicability."""
         p = VAR("P")
@@ -176,75 +179,85 @@ class TestPaso(unittest.TestCase):
         and_pq = AND(p, q)
         
         paso = Paso([], and_pq)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.AND_INTRODUCTION))
+        rule = self._get_default_rule("AND_INTRODUCTION")
+        self.assertTrue(rule.applicable(paso))
         
         # Not applicable to non-AND propositions
         paso_fail = Paso([], p)
-        self.assertFalse(esReglaAplicable(paso_fail, LogicRules.AND_INTRODUCTION))
+        self.assertFalse(rule.applicable(paso_fail))
     
     def test_and_elimination_1_applicable(self):
         """Test AND_ELIMINATION_1 applicability."""
         and_formula = AND(VAR("P"), VAR("Q"))
         paso = Paso([], and_formula)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.AND_ELIMINATION_1))
+        rule = self._get_default_rule("AND_ELIMINATION_1")
+        self.assertTrue(rule.applicable(paso))
     
     def test_and_elimination_2_applicable(self):
         """Test AND_ELIMINATION_2 applicability."""
         and_formula = AND(VAR("P"), VAR("Q"))
         paso = Paso([], and_formula)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.AND_ELIMINATION_2))
+        rule = self._get_default_rule("AND_ELIMINATION_2")
+        self.assertTrue(rule.applicable(paso))
     
     def test_implication_introduction_applicable(self):
         """Test IMPLICATION_INTRODUCTION applicability."""
         impl = IMPLIES(VAR("P"), VAR("Q"))
         paso = Paso([], impl)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.IMPLICATION_INTRODUCTION))
+        rule = self._get_default_rule("IMPLICATION_INTRODUCTION")
+        self.assertTrue(rule.applicable(paso))
         
         # Not applicable to non-IMPLIES
         paso_fail = Paso([], VAR("P"))
-        self.assertFalse(esReglaAplicable(paso_fail, LogicRules.IMPLICATION_INTRODUCTION))
+        self.assertFalse(rule.applicable(paso_fail))
     
     def test_or_introduction_1_applicable(self):
         """Test OR_INTRODUCTION_1 applicability."""
         or_formula = OR(VAR("P"), VAR("Q"))
         paso = Paso([], or_formula)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.OR_INTRODUCTION_1))
+        rule = self._get_default_rule("OR_INTRODUCTION_1")
+        self.assertTrue(rule.applicable(paso))
     
     def test_or_introduction_2_applicable(self):
         """Test OR_INTRODUCTION_2 applicability."""
         or_formula = OR(VAR("P"), VAR("Q"))
         paso = Paso([], or_formula)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.OR_INTRODUCTION_2))
+        rule = self._get_default_rule("OR_INTRODUCTION_2")
+        self.assertTrue(rule.applicable(paso))
     
     def test_negation_introduction_applicable(self):
         """Test NEGATION_INTRODUCTION applicability."""
         neg_formula = NEG(VAR("P"))
         paso = Paso([], neg_formula)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.NEGATION_INTRODUCTION))
+        rule = self._get_default_rule("NEGATION_INTRODUCTION")
+        self.assertTrue(rule.applicable(paso))
     
     def test_negation_elimination_applicable(self):
         """Test NEGATION_ELIMINATION applicability."""
         bottom = BOTTOM()
         paso = Paso([], bottom)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.NEGATION_ELIMINATION))
+        rule = self._get_default_rule("NEGATION_ELIMINATION")
+        self.assertTrue(rule.applicable(paso))
     
     def test_excluded_middle_applicable(self):
         """Test EXCLUDED_MIDDLE applicability."""
         p = VAR("P")
         or_formula = OR(p, NEG(p))
         paso = Paso([], or_formula)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.EXCLUDED_MIDDLE))
+        rule = self._get_default_rule("EXCLUDED_MIDDLE")
+        self.assertTrue(rule.applicable(paso))
         
         # Not applicable if not of form (A ∨ ¬A)
         or_bad = OR(p, VAR("Q"))
         paso_fail = Paso([], or_bad)
-        self.assertFalse(esReglaAplicable(paso_fail, LogicRules.EXCLUDED_MIDDLE))
+        self.assertFalse(rule.applicable(paso_fail))
     
     def test_negation_negation_introduction_applicable(self):
         """Test NEGATION_NEGATION_INTRODUCTION applicability."""
         neg_neg = NEG(NEG(VAR("P")))
         paso = Paso([], neg_neg)
-        self.assertTrue(esReglaAplicable(paso, LogicRules.NEGATION_NEGATION_INTRODUCTION))
+        rule = self._get_default_rule("NEGATION_NEGATION_INTRODUCTION")
+        self.assertTrue(rule.applicable(paso))
 
 
 class TestResolver(unittest.TestCase):
@@ -575,6 +588,37 @@ class TestResolverIntegration(unittest.TestCase):
         
         # Apply AXIOM to the substep
         self.assertTrue(resolver.aplicarRegla(1, LogicRules.AXIOM))
+        self.assertTrue(resolver.isProofComplete())
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_register_custom_rule_and_infer_truth(self, mock_stdout):
+        """Test adding a custom rule to infer Q from P and P → Q."""
+        p = VAR("P")
+        q = VAR("Q")
+        implication = IMPLIES(p, q)
+
+        resolver = Resolver([p, implication], q)
+
+        def custom_applicable(paso: Paso) -> bool:
+            return paso.resolvente == q and any(
+                isinstance(item, IMPLIES) and item.premise == p and item.conclusion == q
+                for item in paso.contexto
+            )
+
+        def custom_handler(self, num_pos: int, current_paso: Paso) -> bool:
+            self._mark_resolved(num_pos, custom_rule)
+            return True
+
+        custom_rule = Rule(
+            key="MPQ",
+            value="MPQ",
+            applicable=custom_applicable,
+            handler=custom_handler,
+            description="Infer Q from P and P → Q in the context."
+        )
+        resolver.register_rule(custom_rule)
+
+        self.assertTrue(resolver.aplicarRegla(0, custom_rule))
         self.assertTrue(resolver.isProofComplete())
 
     @patch('sys.stdout', new_callable=StringIO)

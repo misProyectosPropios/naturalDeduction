@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Union, List, Set, Tuple, Optional
+from typing import Callable, Union, List, Set, Tuple, Optional
 from lexer import Lexer
 from logic import Prop, NEG, AND, OR, IMPLIES, BOTTOM, VAR, LogicRules
 
@@ -130,73 +130,71 @@ class Paso:
         # Devuelve true si la proposición está en el contexto
         return proposition in self.contexto
 
-def esReglaAplicable(paso: Paso, regla: LogicRules) -> bool:
-    """
-    Checks if a given step 'paso' has the correct structure
-    to be the conclusion of the specified 'regla' (rule).
-    It also checks if the proposition in 'paso.resolvente' itself is an axiom within the given context.
-    """
-    prop = paso.resolvente
-    context = paso.contexto
 
-    match regla:
-        case LogicRules.AXIOM:
-            return prop in context  # Check if the proposition is in the provided context
-
-        case LogicRules.AND_INTRODUCTION:
-            return isinstance(prop, AND)
-
-        case LogicRules.AND_ELIMINATION_1 | LogicRules.AND_ELIMINATION_2 | \
-             LogicRules.IMPLICATION_ELIMINATION | LogicRules.OR_ELIMINATION | \
-             LogicRules.BOTTOM_ELIMINATION | LogicRules.NEGATION_NEGATION_ELIMINATION | \
-             LogicRules.PBC:
-            # These rules can conclude any proposition type, so their conclusion's structure
-            # itself doesn't restrict applicability. The actual premises are key.
-            return True
-
-        case LogicRules.IMPLICATION_INTRODUCTION:
-            return isinstance(prop, IMPLIES)
-
-        case LogicRules.OR_INTRODUCTION_1 | LogicRules.OR_INTRODUCTION_2:
-            return isinstance(prop, OR)
-
-        case LogicRules.NEGATION_INTRODUCTION | LogicRules.MODUS_TOLLENS:
-            return isinstance(prop, NEG)
-
-        case LogicRules.NEGATION_ELIMINATION:
-            return isinstance(prop, BOTTOM)
-
-        case LogicRules.NEGATION_NEGATION_INTRODUCTION:
-            return isinstance(prop, NEG) and isinstance(prop.prop, NEG)
-
-        case LogicRules.EXCLUDED_MIDDLE:
-            return isinstance(prop, OR) and \
-                   isinstance(prop.right, NEG) and \
-                   prop.left == prop.right.prop
-
-        case _:
-            raise ValueError(f"Regla no reconocida o no implementada: {regla.value}")
-
+@dataclass
+class Rule:
+    key: str
+    value: str
+    applicable: Callable[[Paso], bool]
+    handler: Callable[['Resolver', int, Paso], bool]
+    description: str = ""
 
 # --- Resolver Class ---
 class Resolver:
     """
     Manages the state of a natural deduction proof.
     """
-    def __init__(self, contexto_inicial: List[Prop], resolvente_final: Prop):
+    def __init__(self, contexto_inicial: List[Prop], resolvente_final: Prop, rules: Optional[List[Rule]] = None):
         """
         Initializes the Resolver with the initial context (axioms/assumptions)
         and the final proposition to be proven (resolvent).
         """
         self.contexto_inicial = contexto_inicial
         self.resolvente_final = resolvente_final
+        self.rules: List[Rule] = rules or create_default_rules()
+        self._build_rule_lookups()
 
         # listaDePasos store tuples: (Paso object, step_index, rule_applied)
         initial_goal_paso = Paso(contexto_inicial, resolvente_final)
-        self.lista_de_pasos: List[Tuple[Paso, int, LogicRules]] = [
+        self.lista_de_pasos: List[Tuple[Paso, int, Optional[Rule]]] = [
             (initial_goal_paso, 0, None) 
         ]
         self.pasos_a_resolver: Set[int] = {0}  
+
+    def _build_rule_lookups(self):
+        self.rules_by_key = {rule.key: rule for rule in self.rules}
+        self.rules_by_value = {rule.value: rule for rule in self.rules}
+
+    def _resolve_rule(self, regla: Union[LogicRules, Rule, str, int]) -> Rule:
+        if isinstance(regla, Rule):
+            return regla
+        if isinstance(regla, LogicRules):
+            rule = self.rules_by_key.get(regla.name)
+            if rule is None:
+                raise ValueError(f"Rule not found for logic enum: {regla}")
+            return rule
+        if isinstance(regla, int):
+            if 0 <= regla < len(self.rules):
+                return self.rules[regla]
+            raise IndexError(f"Rule index out of range: {regla}")
+        if isinstance(regla, str):
+            cleaned = regla.strip()
+            if cleaned in self.rules_by_key:
+                return self.rules_by_key[cleaned]
+            if cleaned in self.rules_by_value:
+                return self.rules_by_value[cleaned]
+            for rule in self.rules:
+                if cleaned.upper() == rule.key.upper():
+                    return rule
+            raise ValueError(f"Unknown rule identifier: {regla}")
+        raise TypeError("Rule must be a Rule, LogicRules, string, or integer.")
+
+    def register_rule(self, rule: Rule):
+        if rule.key in self.rules_by_key or rule.value in self.rules_by_value:
+            raise ValueError(f"Rule with key '{rule.key}' or value '{rule.value}' already exists.")
+        self.rules.append(rule)
+        self.rules_by_key[rule.key] = rule
+        self.rules_by_value[rule.value] = rule
 
     def isProofComplete(self) -> bool:
         """
@@ -229,7 +227,7 @@ class Resolver:
             self.pasos_a_resolver.add(new_idx)
         return new_indices
     
-    def _mark_resolved(self, num_pos: int, regla: LogicRules):
+    def _mark_resolved(self, num_pos: int, regla: Rule):
         """Mark a step as resolved with the given rule."""
         paso, _, _ = self.lista_de_pasos[num_pos]
         self.lista_de_pasos[num_pos] = (paso, num_pos, regla)
@@ -238,7 +236,7 @@ class Resolver:
     def _try_axiom(self, num_pos: int, current_paso: Paso) -> bool:
         """Try to apply AXIOM rule."""
         if current_paso.resolvente in current_paso.contexto:
-            self._mark_resolved(num_pos, LogicRules.AXIOM)
+            self._mark_resolved(num_pos, self._resolve_rule(LogicRules.AXIOM))
             return True
         return False
     
@@ -385,55 +383,23 @@ class Resolver:
         self.pasos_a_resolver.discard(num_pos)
         return True
     
-    def aplicarRegla(self, num_pos: int, regla: LogicRules) -> bool:
+    def aplicarRegla(self, num_pos: int, regla: Union[LogicRules, Rule, str, int]) -> bool:
         """
         Attempts to apply a given rule to the step at `num_pos`.
         If successful, it updates `pasos_a_resolver` and `lista_de_pasos`.
-
-        Args:
-            num_pos (int): The 0-based index of the step to which the rule is being applied.
-            regla (LogicRules): The rule to attempt to apply.
-
-        Returns:
-            bool: True if the rule was successfully applied, False otherwise.
         """
         if not self._validate_step(num_pos):
             return False
-        
-        current_paso = self._get_paso(num_pos)
-        
-        if not esReglaAplicable(current_paso, regla):
-            print(f"Error: La regla '{regla.value}' no es estructuralmente aplicable a la proposición {current_paso.resolvente.prettify()}.")
-            return False
-        
-        print(f"Aplicando regla '{regla.value}' al paso {num_pos} (Prop: {current_paso.resolvente.prettify()})...")
-        
-        # Try to apply the rule using the appropriate handler
-        handlers = {
-            LogicRules.AXIOM: self._try_axiom,
-            LogicRules.AND_INTRODUCTION: self._try_and_introduction,
-            LogicRules.AND_ELIMINATION_1: self._try_and_elimination_1,
-            LogicRules.AND_ELIMINATION_2: self._try_and_elimination_2,
-            LogicRules.IMPLICATION_INTRODUCTION: self._try_implication_introduction,
-            LogicRules.IMPLICATION_ELIMINATION: self._try_implication_elimination,
-            LogicRules.OR_INTRODUCTION_1: self._try_or_introduction_1,
-            LogicRules.OR_INTRODUCTION_2: self._try_or_introduction_2,
-            LogicRules.OR_ELIMINATION: self._try_or_elimination,
-            LogicRules.NEGATION_INTRODUCTION: self._try_negation_introduction,
-            LogicRules.NEGATION_ELIMINATION: self._try_negation_elimination,
-            LogicRules.BOTTOM_ELIMINATION: self._try_bottom_elimination,
-            LogicRules.MODUS_TOLLENS: self._try_modus_tollens,
-            LogicRules.NEGATION_NEGATION_INTRODUCTION: self._try_negation_negation_introduction,
-            LogicRules.NEGATION_NEGATION_ELIMINATION: self._try_negation_negation_elimination,
-            LogicRules.EXCLUDED_MIDDLE: self._try_excluded_middle,
-            LogicRules.PBC: self._try_pbc,
-        }
-        
-        handler = handlers.get(regla)
-        if handler:
-            return handler(num_pos, current_paso)
-        return False
 
+        current_paso = self._get_paso(num_pos)
+        rule = self._resolve_rule(regla)
+
+        if not rule.applicable(current_paso):
+            print(f"Error: La regla '{rule.value}' no es estructuralmente aplicable a la proposición {current_paso.resolvente.prettify()}.")
+            return False
+
+        print(f"Aplicando regla '{rule.value}' al paso {num_pos} (Prop: {current_paso.resolvente.prettify()})...")
+        return rule.handler(self, num_pos, current_paso)
 
 
     def mostrar_prueba(self):
@@ -470,12 +436,135 @@ class Resolver:
             print("All steps resolved!")
 
 
-def choose_rule() -> LogicRules:
+def create_default_rules() -> List[Rule]:
+    return [
+        Rule(
+            key="AXIOM",
+            value="Axiom",
+            applicable=lambda paso: paso.resolvente in paso.contexto,
+            handler=Resolver._try_axiom,
+            description="Resolve a goal directly if it is in the current context."
+        ),
+        Rule(
+            key="AND_INTRODUCTION",
+            value="∧I",
+            applicable=lambda paso: isinstance(paso.resolvente, AND),
+            handler=Resolver._try_and_introduction,
+            description="Introduce a conjunction by proving both conjuncts."
+        ),
+        Rule(
+            key="AND_ELIMINATION_1",
+            value="∧E1",
+            applicable=lambda paso: isinstance(paso.resolvente, AND),
+            handler=Resolver._try_and_elimination_1,
+            description="Extract the left conjunct from a conjunction."
+        ),
+        Rule(
+            key="AND_ELIMINATION_2",
+            value="∧E2",
+            applicable=lambda paso: isinstance(paso.resolvente, AND),
+            handler=Resolver._try_and_elimination_2,
+            description="Extract the right conjunct from a conjunction."
+        ),
+        Rule(
+            key="IMPLICATION_INTRODUCTION",
+            value="→I",
+            applicable=lambda paso: isinstance(paso.resolvente, IMPLIES),
+            handler=Resolver._try_implication_introduction,
+            description="Introduce an implication by assuming its premise."
+        ),
+        Rule(
+            key="IMPLICATION_ELIMINATION",
+            value="→E",
+            applicable=lambda paso: True,
+            handler=Resolver._try_implication_elimination,
+            description="Use implication elimination to derive a conclusion."
+        ),
+        Rule(
+            key="OR_INTRODUCTION_1",
+            value="∨I1",
+            applicable=lambda paso: isinstance(paso.resolvente, OR),
+            handler=Resolver._try_or_introduction_1,
+            description="Introduce a disjunction by proving the left disjunct."
+        ),
+        Rule(
+            key="OR_INTRODUCTION_2",
+            value="∨I2",
+            applicable=lambda paso: isinstance(paso.resolvente, OR),
+            handler=Resolver._try_or_introduction_2,
+            description="Introduce a disjunction by proving the right disjunct."
+        ),
+        Rule(
+            key="OR_ELIMINATION",
+            value="∨E",
+            applicable=lambda paso: True,
+            handler=Resolver._try_or_elimination,
+            description="Eliminate a disjunction by proving the goal from both disjuncts."
+        ),
+        Rule(
+            key="NEGATION_INTRODUCTION",
+            value="¬I",
+            applicable=lambda paso: isinstance(paso.resolvente, NEG),
+            handler=Resolver._try_negation_introduction,
+            description="Introduce a negation by proving a contradiction from the negated formula."
+        ),
+        Rule(
+            key="NEGATION_ELIMINATION",
+            value="¬E",
+            applicable=lambda paso: True,
+            handler=Resolver._try_negation_elimination,
+            description="Eliminate a negation to derive a contradiction."
+        ),
+        Rule(
+            key="BOTTOM_ELIMINATION",
+            value="⊥E",
+            applicable=lambda paso: True,
+            handler=Resolver._try_bottom_elimination,
+            description="Derive any formula from a contradiction."
+        ),
+        Rule(
+            key="MODUS_TOLLENS",
+            value="MT",
+            applicable=lambda paso: isinstance(paso.resolvente, NEG),
+            handler=Resolver._try_modus_tollens,
+            description="Infer a negated antecedent from an implication and a negated consequent."
+        ),
+        Rule(
+            key="NEGATION_NEGATION_INTRODUCTION",
+            value="¬¬I",
+            applicable=lambda paso: isinstance(paso.resolvente, NEG) and isinstance(paso.resolvente.prop, NEG),
+            handler=Resolver._try_negation_negation_introduction,
+            description="Introduce double negation."
+        ),
+        Rule(
+            key="NEGATION_NEGATION_ELIMINATION",
+            value="¬¬E",
+            applicable=lambda paso: isinstance(paso.resolvente, NEG) and isinstance(paso.resolvente.prop, NEG),
+            handler=Resolver._try_negation_negation_elimination,
+            description="Eliminate double negation."
+        ),
+        Rule(
+            key="EXCLUDED_MIDDLE",
+            value="LEM",
+            applicable=lambda paso: isinstance(paso.resolvente, OR) and isinstance(paso.resolvente.right, NEG) and paso.resolvente.left == paso.resolvente.right.prop,
+            handler=Resolver._try_excluded_middle,
+            description="Introduce the law of excluded middle for a formula."
+        ),
+        Rule(
+            key="PBC",
+            value="PBC",
+            applicable=lambda paso: True,
+            handler=Resolver._try_pbc,
+            description="Use proof by contradiction to infer a formula."
+        ),
+    ]
+
+
+def choose_rule(rules: List[Rule]) -> Rule:
     """Allow the user to choose a rule by number or by its value/name."""
     print("\nAvailable rules:")
-    rules = list(LogicRules)
     for idx, rule in enumerate(rules, start=1):
-        print(f"  {idx}. {rule.value}")
+        print(f"  {idx}. {rule.value} - {rule.description}")
 
     while True:
         rule_input = input("\nEnter the rule number or rule value: ").strip()
@@ -491,7 +580,7 @@ def choose_rule() -> LogicRules:
             continue
 
         for rule in rules:
-            if rule_input == rule.value or rule_input.upper() == rule.name:
+            if rule_input == rule.value or rule_input.upper() == rule.key.upper():
                 return rule
 
         print(f"✗ Unknown rule: '{rule_input}'. Please enter a valid rule number or rule name.")
@@ -553,7 +642,7 @@ def main():
                 print("Proof cancelled.")
                 break
             
-            regla = choose_rule()
+            regla = choose_rule(resolver.rules)
 
             # Apply the rule
             if resolver.aplicarRegla(num_pos, regla):
