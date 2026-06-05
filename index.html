@@ -158,6 +158,7 @@ async function initLogicEngine() {
     // We assume these files exist on your server at /src/lexer.py, etc.
     const files = ['lexer.py', 'parser.py', 'logic.py'];
     for (const file of files) {
+        console.log("Hola mundo" + file)
         try {
             const response = await fetch(`./src/${file}`);
             if (response.ok) {
