@@ -91,3 +91,40 @@ class LogicRules(Enum):
     NEGATION_NEGATION_ELIMINATION = "¬¬E"
     EXCLUDED_MIDDLE = "LEM"
     PBC = "PBC"
+
+def apply_logic_rule(context_strs, goal_str, rule_key):
+    """
+    Central entry point for rule application.
+    Returns a dict with either 'error' or the new state.
+    """
+    from src.lexer import Lexer
+    from src.parser import Parser
+
+    def parse(s):
+        return Parser(Lexer(s).tokenize()).parse()
+
+    try:
+        goal_ast = parse(goal_str)
+        context_asts = [parse(c) for c in context_strs]
+
+        if rule_key == "IMPLICATION_INTRODUCTION":
+            if not isinstance(goal_ast, IMPLIES):
+                return {"error": "The selected step is not an implication; →I cannot be applied."}
+            
+            return {
+                "new_context": context_strs + [goal_ast.premise.prettify()],
+                "new_goal": goal_ast.conclusion.prettify(),
+                "resolved_by": "→I"
+            }
+
+        if rule_key == "AXIOM":
+            # Deep equality check thanks to dataclass eq=True
+            if any(ctx == goal_ast for ctx in context_asts):
+                return {"resolved_by": "Axiom"}
+            return {"error": "Axiom can only be applied when the goal is already in the context."}
+
+        # Add other rules here as needed...
+        return {"error": f"Rule '{rule_key}' is not yet implemented in Python logic."}
+
+    except Exception as e:
+        return {"error": f"Logic Error: {str(e)}"}

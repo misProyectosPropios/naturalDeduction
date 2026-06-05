@@ -310,21 +310,47 @@ function renderCliPreview() {
         : '(empty)';
     const goalText = state.goal ? normalizeFormula(state.goal) : '(not set)';
 
+    // Determine proof completion: simple heuristic — all steps resolved
+    const proofCompleted = state.steps.length > 0 && state.steps.every((s) => s.resolvedBy);
+
     preview.textContent = [
         `Context complete with ${state.context.length} proposition(s).`,
         '',
         `Context: ${contextText}`,
-        `Goal: ${goalText}`
+        `Goal: ${goalText}`,
+        `Status: ${proofCompleted ? 'Completed' : 'Pending'}`
     ].join('\n');
 
     viewArea.appendChild(preview);
 }
 
 function renderView() {
+    // Compute proof completion state
+    const proofCompleted = state.steps.length > 0 && state.steps.every((s) => s.resolvedBy);
+
     renderFormulaList();
     renderCliPreview();
     renderSteps();
     renderRulesPanel();
+
+    // Show completion message in the steps list if finished
+    const stepsList = document.getElementById('stepsList');
+    const actions = document.querySelector('.actions');
+    if (proofCompleted) {
+        stepsList.innerHTML = '<div class="view-placeholder">Proof completed.</div>';
+        if (actions) actions.style.display = 'none';
+    } else if (actions) {
+        actions.style.display = 'flex';
+    }
+
+    // Disable apply controls when there's no goal or proof is already completed
+    const applyRuleBtn = document.getElementById('applyRuleBtn');
+    const stepSelect = document.getElementById('stepSelect');
+    const ruleSelect = document.getElementById('ruleSelect');
+    const disableApply = !state.goal || proofCompleted;
+    if (applyRuleBtn) applyRuleBtn.disabled = disableApply;
+    if (stepSelect) stepSelect.disabled = disableApply;
+    if (ruleSelect) ruleSelect.disabled = disableApply;
 }
 
 function setError(message) {
@@ -374,10 +400,12 @@ function attachEvents() {
     });
 
     applyRuleBtn.addEventListener('click', () => {
+        console.log("applyRuleBtn clicked")
         clearError();
+    
         const selectedId = Number(stepSelect.value);
         const selectedRuleKey = ruleSelect.value;
-
+        console.log(selectedId, "\n",selectedRuleKey)
         if (Number.isNaN(selectedId) || selectedRuleKey === '') {
             setError('Select a step and a rule before applying.');
             return;
@@ -385,7 +413,7 @@ function attachEvents() {
 
         const step = state.steps.find((item) => item.id === selectedId);
         const rule = defaultRules.find((item) => item.key === selectedRuleKey);
-
+        console.log(step, rule)
         if (!step || !rule) {
             setError('Selected step or rule is invalid.');
             return;
@@ -393,12 +421,16 @@ function attachEvents() {
 
         try {
             const message = applyRuleToStep(step, rule);
+            console.log("Applying rule")
             if (message) {
                 setError(message);
                 return;
             }
+            console.log("Acepting rule")
             state.selectedStepId = step.id;
             renderView();
+            console.log("Rendering")
+
         } catch (error) {
             setError(error.message);
         }

@@ -8,90 +8,62 @@ export function initPython(instance) {
     // Bootstrap standard imports
     pyodide.runPython(`
         import json
-        try:
-            from src.lexer import Lexer
-            # from src.parser import Parser (Assume you have a parser)
-        except ImportError:
-            pass
+        import re
+        from src.lexer import Lexer
+        from src.parser import Parser
+        from src.logic import apply_logic_rule
     `);
 }
 
 export function normalizeFormula(raw) {
-    // Example of calling a Python function for normalization
-    return pyodide.runPython(`
-        import re
-        raw = ${JSON.stringify(raw)}
-        unquoted = re.sub(r'"([^"]+)"', r'\\1', raw)
-        unquoted.replace("->", " → ").replace("^", " ∧ ").replace("V", " ∨ ").replace("_", " ⊥ ").replace("-", " ¬").strip()
-    `);
+    pyodide.globals.set("raw_input", raw);
+    return pyodide.runPython(`re.sub(r'"([^"]+)"', r'\\1', raw_input).replace("->", " → ").replace("^", " ∧ ").replace("V", " ∨ ").replace("_", " ⊥ ").replace("-", " ¬").strip()`);
 }
 
 export function tokenizeFormula(input) {
-    // Use the Python Lexer defined in src/lexer.py
-    return pyodide.runPython(`
-        lexer = Lexer(${JSON.stringify(input)})
-        tokens = lexer.tokenize()
-        # Map Python objects to JS-serializable list
+    pyodide.globals.set("tok_input", input);
+    const json = pyodide.runPython(`
+        tokens = Lexer(tok_input).tokenize()
         json.dumps([{"type": t.type.name, "value": getattr(t, 'value', None)} for t in tokens])
-    `).then(JSON.parse);
+    `);
+    return JSON.parse(json);
 }
 
 export function parseFormulaString(raw) {
-    // This assumes you have a Parser class in Python
-    return pyodide.runPython(`
-        # Replace with actual parser logic when available
-        # For now, return a mock/minimal AST compatible with current UI
-        {"type": "VAR", "name": "PythonParsed"} 
-    `);
+    pyodide.globals.set("parse_input", raw);
+    // This returns the Python AST object; we can call methods on it or convert to JS
+    return pyodide.runPython(`Parser(Lexer(parse_input).tokenize()).parse()`);
 }
 
 export function formulaToString(ast) {
-    return pyodide.runPython(`
-        # Logic to convert AST back to string using Python
-        "TODO: Python Stringification"
-    `);
+    // If ast is a PyProxy (Python object), we call its prettify method
+    return ast.prettify();
 }
 
 export function applyRuleToStep(step, rule) {
-    // Proxy the rule application to Python logic
-    const result = pyodide.runPython(`
-        # Use Python logic to apply rules
-        None # Return message if error, else None
-    `);
-    
-    if (result) return result;
+    pyodide.globals.set("ctx_input", step.context);
+    pyodide.globals.set("goal_input", step.goal);
+    pyodide.globals.set("rule_key", rule.key);
 
-    // Manual implementation for rules that change state (until Python handles state)
-    if (rule.key === 'IMPLICATION_INTRODUCTION') {
-        const goalAst = parseFormulaString(step.goal);
-        if (goalAst.type !== 'IMPLIES') {
-            return 'The selected step is not an implication; →I cannot be applied.';
-        }
+    const result = pyodide.runPython(`apply_logic_rule(ctx_input.to_py(), goal_input, rule_key)`).toJs({dict_converter: Object.fromEntries});
 
-        const premise = formulaToString(goalAst.left);
-        const conclusion = formulaToString(goalAst.right);
-        step.context = [...step.context, premise];
-        step.goal = conclusion;
-        step.resolvedBy = rule.value;
-        return null;
+    if (result.error) return result.error;
+
+    if (result.new_goal) {
+        step.context = result.new_context;
+        step.goal = result.new_goal;
     }
-
-    if (rule.key === 'AXIOM') {
-        const normalizedGoal = normalizeFormula(step.goal);
-        const hasGoalInContext = step.context.some((ctx) => normalizeFormula(ctx) === normalizedGoal);
-        if (!hasGoalInContext) {
-            return 'Axiom can only be applied when the goal is already in the context.';
-        }
-        step.resolvedBy = rule.value;
-        return null;
-    }
-
-    return 'This rule is not yet implemented for UI simulation.';
+    step.resolvedBy = result.resolved_by;
+    return null;
 }
 
 export function validateInput(raw) {
-    const trimmed = raw.trim();
-    if (!trimmed) return false;
-    parseFormulaString(trimmed);
-    return true;
+    try {
+        const trimmed = raw.trim();
+        if (!trimmed) return false;
+        parseFormulaString(trimmed);
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
