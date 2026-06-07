@@ -8,23 +8,6 @@ try:
 except Exception:
     pass
 
-
-
-# --- Helper Functions for User Input Parsing (from previous interactions) ---
-def parse_formula(expr: str) -> Prop:
-    allowed_globals = {
-        'VAR': VAR,
-        'AND': AND,
-        'OR': OR,
-        'NEG': NEG,
-        'IMPLIES': IMPLIES,
-        'BOTTOM': BOTTOM
-    }
-    try:
-        return eval(expr, {"__builtins__": None}, allowed_globals)
-    except Exception as e:
-        raise ValueError(f"Error parsing formula '{expr}': {e}")
-
 def parse_formula_with_lexer(expr: str) -> Optional[Prop]:
     """
     Parse a formula using the lexer and parser.
