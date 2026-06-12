@@ -221,6 +221,13 @@ class LEM(Rule):
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return []
 
+class NotNotElimination(Rule):
+    def applicable(self, goal: Goal) -> bool:
+        return True
+
+    def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
+        return [Goal(goal.context, NEG(NEG(goal.formula)))]
+
 
 @dataclass
 class Goal:
