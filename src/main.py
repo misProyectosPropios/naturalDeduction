@@ -172,7 +172,7 @@ class ImpIntro(Rule):
         return isinstance(goal.formula, IMPLIES)
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
-        return [Goal(goal.context | {goal.formula.left}, goal.formula.right)]
+        return [Goal(goal.context | {goal.formula.premise}, goal.formula.conclusion)]
 
 
 class ImpElimination(Rule):
@@ -188,7 +188,7 @@ class NotIntro(Rule):
         return isinstance(goal.formula, NEG)
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
-        return [Goal(goal.context | {goal.formula})] #TODO WRITE IT
+            return [Goal(goal.context | {goal.formula}, BOTTOM())]
 
     
 class NotElimination(Rule):
@@ -196,8 +196,8 @@ class NotElimination(Rule):
             return isinstance(goal.formula, BOTTOM)
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
-        raise NotImplementedError #TODO CREATE TWO FROM PREMISES
-
+        premisesValue = premises[0]
+        raise [Goal(goal.context, premisesValue), Goal(goal.context, NEG(premisesValue))] 
     
 class BottomElimination(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -205,6 +205,22 @@ class BottomElimination(Rule):
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, BOTTOM())]
+
+class PBC(Rule):
+    def applicable(self, goal: Goal) -> bool:
+        return True
+
+    def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
+        return [Goal(goal.context | {NEG(goal.formula)}, BOTTOM())]
+
+class LEM(Rule):
+    def applicable(self, goal: Goal) -> bool:
+        raise KeyError
+        return #isinstance(goal.formula, OR) and goal.formula.left == NEG(goal.)
+
+    def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
+        return []
+
 
 @dataclass
 class Goal:
@@ -246,8 +262,8 @@ class Proof:
     def aplicarRegla(self, regla: Rule, posicion: int, *premises: Prop) -> tuple[bool, list[Goal]]:
         if posicion < 0 or posicion >= len(self.steps):
             return False, []
-
-        applied, subgoals = self.steps[posicion].aplicarRegla(regla, *premises)
+        step = self.steps[posicion]
+        applied, subgoals = step.aplicarRegla(regla, *premises)
         if not applied:
             return False, []
 
