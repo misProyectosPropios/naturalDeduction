@@ -215,8 +215,7 @@ class PBC(Rule):
 
 class LEM(Rule):
     def applicable(self, goal: Goal) -> bool:
-        raise KeyError
-        return #isinstance(goal.formula, OR) and goal.formula.left == NEG(goal.)
+        return isinstance(goal.formula, OR) and (goal.formula.left == NEG(goal.formula.right) or goal.formula.right == NEG(goal.formula.left))
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return []
