@@ -92,8 +92,23 @@ def getResolvent() -> Prop:
             print(f"✗ {exc} Please try again.")
 
 
-def apply_rule(step_idx: int, rule_name: str):
+def apply_rule(step_idx: int, rule_name: str, premises=None):
     global _current_proof
+    
+    print("PREMISES RAW:", premises)
+    print("PREMISES TYPE:", type(premises))
+
+
+    if premises is None:
+        premises = []
+
+    
+    if hasattr(premises, "to_py"):
+        premises = premises.to_py()
+
+    print("AFTER TO_PY:", premises)
+    print(type(premises))
+    print(premises[0])
 
     if _current_proof is None:
         return {
@@ -122,9 +137,11 @@ def apply_rule(step_idx: int, rule_name: str):
         }
 
     try:
+        print("PROOF premises:", premises)
         applied, subgoals = _current_proof.aplicarRegla(
             rule,
-            step_idx
+            step_idx,
+            *premises
         )
 
         if not applied:
@@ -150,21 +167,10 @@ def get_applicable_rules(step_idx):
 
     goal = _current_proof.steps[step_idx]
 
-    print(
-        "Selected goal:",
-        goal.formula,
-        type(goal.formula)
-    )
-
     result = []
 
     for rule in available_rules():
         app = rule.applicable(goal)
-
-        print(
-            rule.__class__.__name__,
-            app
-        )
 
         if app:
             result.append({
@@ -269,7 +275,12 @@ class AndElim1(Rule):
         return True
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
-        return [Goal(goal.context, AND(goal.formula, VAR("_")))]
+        if len(premises) < 1:
+            raise ValueError(
+                "AndElim1 requires one formula."
+            )
+        
+        return [Goal(goal.context, AND(goal.formula,  premises[0]))]
 
     def description(self) -> str:
         return "Hola mundo"
@@ -282,7 +293,11 @@ class AndElim2(Rule):
         return True
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
-        return [Goal(goal.context, AND(VAR("_"), goal.formula))]
+        if len(premises) < 1:
+            raise ValueError(
+                "AndElim1 requires one formula."
+            )
+        return [Goal(goal.context, AND(premises[0], goal.formula))]
 
     def description(self) -> str:
         return "Hola mundo"

@@ -212,13 +212,11 @@
         //RENDERING TREE | LINE PROOF
         function renderProof(descriptionPyProxy) {
             const lines = descriptionPyProxy.toJs();
-            console.log(lines)
             viewArea.innerHTML =
                 '<h3>Proof state</h3>' +
                 lines.map(line => `<div class="proof-step">${line}</div>`).join('');
 
             const proof = pyodide.globals.get('get_current_proof')();
-            console.log(proof)
             if (!proof) {
                 return;
             }
@@ -288,7 +286,6 @@
         /// Render formulas sidebar
         function renderFormulas() {
             formulaList.innerHTML = '';
-            console.log("Rendering")
             // Context formulas
             if (formulas.length > 0) {
                 const ctxTitle = document.createElement('h4');
@@ -308,7 +305,7 @@
 
             // Goal
             if (goal) {
-                console.log("Writing goal")
+                
                 const goalTitle = document.createElement('h4');
                 goalTitle.textContent = 'Goal';
                 goalTitle.style.marginTop = '1rem';
@@ -411,7 +408,7 @@
                 // Parse in Python to validate and get prettified string
                 const parsed = pyodide.globals.get('parse_formula_with_lexer')(raw);
                 const pretty = parsed.prettify();
-                console.log(pretty)
+                
 
                 
                 formulas.push({
@@ -439,21 +436,17 @@
             try {
                 const parsed = pyodide.globals
                     .get('parse_formula_with_lexer')(raw);
-                console.log(parsed)
+        
                 goal = {
                     str: raw,
                     pretty: parsed.prettify()
                 };
-                console.log(goal)
                 formulaInput.value = '';
                 
                 renderFormulas();
-                console.log("Rendered formulas after set goal")
 
                 const initProof = pyodide.globals.get("init_proof");
                 const desc = initProof(formulas, goal);
-                console.log("Called init proof")
-                console.log(desc)
                 renderProof(desc);
 
             } catch (e) {
@@ -479,10 +472,38 @@
 
         errorMsg.textContent = '';
 
+
+
+
         try {
+            const premisesInput = document.getElementById('premisesInput');
+            const premiseStrings =
+                splitPremises(
+                    premisesInput.value.trim()
+                );
 
-            const result = pyodide.globals.get('apply_rule')(stepIdx, ruleName);
+            console.log("Permie stirngs")
+            console.log(premiseStrings)
+            const parsedPremises =
+                premiseStrings.map(
+                    formula =>
+                        pyodide.globals
+                            .get('parse_formula_with_lexer')
+                            (formula)
+                );
 
+            console.log("Parsed premises")
+            
+            parsedPremises.forEach((p, i) => {
+                console.log(i, p);
+            });
+
+            const result =
+                pyodide.globals.get('apply_rule')(
+                    stepIdx,
+                    ruleName,
+                    parsedPremises
+                );
             const res = result.toJs();
 
             if (!res.success) {
