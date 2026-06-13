@@ -65,6 +65,7 @@
         .subproof { border-left: 2px solid #aaa; margin: 0.5rem 0 0.5rem 1.5rem; padding-left: 1rem; }
         .subproof-label { font-size: 0.75rem; color: #888; margin-bottom: 0.25rem; }
     </style>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
 </head>
 <body>
 <header>
@@ -104,7 +105,13 @@
                 <select id="stepSelect"></select>
                 <select id="ruleSelect"></select>
                 <button id="applyRuleBtn">Apply rule</button>
+                <input
+                    type="text"
+                    id="premisesInput"
+                    placeholder="Extra formulas separated by ;"
+                />
             </div>
+            
         </div>
     </div>
     <div class="rules-panel">
@@ -113,368 +120,403 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
 <script type="module">
-import { initPython, normalizeFormula, tokenizeFormula, parseFormulaString, formulaToString, applyRuleToStep, validateInput } from './src/formula.js';
 
-const wasmUrl = 'formula.wasm';
-const wasmInlineBase64 = 'AGFzbQEAAAABBwFgAn9/AX8DAgEABwcBA2FkZAAACgkBBwAgACABags='; 
-const defaultRules = [
-    { key: 'AXIOM', value: 'Axiom', description: 'Resolve a goal directly if it appears in context.' },
-    { key: 'AND_INTRODUCTION', value: '∧I', description: 'Introduce a conjunction by proving both conjuncts.' },
-    { key: 'AND_ELIMINATION_1', value: '∧E1', description: 'Extract the left conjunct from a conjunction.' },
-    { key: 'AND_ELIMINATION_2', value: '∧E2', description: 'Extract the right conjunct from a conjunction.' },
-    { key: 'IMPLICATION_INTRODUCTION', value: '→I', description: 'Assume the premise and prove the conclusion.' },
-    { key: 'IMPLICATION_ELIMINATION', value: '→E', description: 'Use implication elimination to reach the goal.' },
-    { key: 'OR_INTRODUCTION_1', value: '∨I1', description: 'Introduce a disjunction by proving the left side.' },
-    { key: 'OR_INTRODUCTION_2', value: '∨I2', description: 'Introduce a disjunction by proving the right side.' },
-    { key: 'OR_ELIMINATION', value: '∨E', description: 'Eliminate a disjunction by handling both cases.' },
-    { key: 'NEGATION_INTRODUCTION', value: '¬I', description: 'Prove a negation through contradiction.' },
-    { key: 'NEGATION_ELIMINATION', value: '¬E', description: 'Use a negation to derive a contradiction.' },
-    { key: 'BOTTOM_ELIMINATION', value: '⊥E', description: 'Derive any formula from a contradiction.' },
-    { key: 'MODUS_TOLLENS', value: 'MT', description: 'Infer a negated antecedent from a negated consequent.' },
-    { key: 'NEGATION_NEGATION_INTRODUCTION', value: '¬¬I', description: 'Introduce double negation.' },
-    { key: 'NEGATION_NEGATION_ELIMINATION', value: '¬¬E', description: 'Eliminate double negation.' },
-    { key: 'EXCLUDED_MIDDLE', value: 'LEM', description: 'Introduce a tautological disjunction A ∨ ¬A.' },
-    { key: 'PBC', value: 'PBC', description: 'Use proof by contradiction on the goal.' }
-];
-const state = {
-    context: [],
-    goal: null,
-    view: 'tree',
-    steps: [],
-    selectedStepId: null
-};
-let wasmInstance = null;
+    let pyodide
 
-async function initLogicEngine() {
-    // Initialize Pyodide
-    const pyodide = await loadPyodide();
-    
-    // Create src directory in virtual FS
-    pyodide.FS.mkdir('src');
-    
-    // Load the Python source files into the virtual environment
-    // We assume these files exist on your server at /src/lexer.py, etc.
-    const files = ['lexer.py', 'parser.py', 'logic.py'];
-    for (const file of files) {
-        console.log("Hola mundo" + file)
-        try {
-            const response = await fetch(`./src/${file}`);
-            if (response.ok) {
-                const text = await response.text();
-                pyodide.FS.writeFile(`src/${file}`, text);
-            }
-        } catch (e) {
-            console.warn(`Could not load src/${file} into Pyodide:`, e);
+    async function main() {
+        pyodide = await loadPyodide();
+
+        if (!pyodide.FS.analyzePath("/src").exists) {
+            pyodide.FS.mkdir("/src");
         }
-    }
 
-    // Pass the instance to our formula bridge
-    initPython(pyodide);
+        pyodide.FS.writeFile("/src/__init__.py", "");
 
-    // Fallback/Legacy WASM loading
-    try {
-        const response = await fetch(wasmUrl);
-        if (response.ok) {
-            const { instance } = await WebAssembly.instantiate(await response.arrayBuffer());
-            wasmInstance = instance;
-        }
-    } catch (e) {
-        console.warn('Legacy WASM failed to load, continuing with Pyodide.');
-    }
-}
-
-function escapeHtml(text) {
-    return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
-
-function renderFormulaList() {
-    const formulaList = document.getElementById('formulaList');
-    formulaList.innerHTML = '';
-
-    if (state.goal) {
-        const goalItem = document.createElement('div');
-        goalItem.className = 'formula-item';
-        goalItem.innerHTML = `<strong>Goal:</strong> ${escapeHtml(normalizeFormula(state.goal))}`;
-        formulaList.appendChild(goalItem);
-    }
-
-    if (state.context.length === 0) {
-        const placeholder = document.createElement('div');
-        placeholder.className = 'formula-item';
-        placeholder.textContent = 'No context formulas added yet.';
-        formulaList.appendChild(placeholder);
-    } else {
-        state.context.forEach((formula, index) => {
-            const item = document.createElement('div');
-            item.className = 'formula-item';
-            const cleaned = escapeHtml(normalizeFormula(formula));
-            item.innerHTML = `<span>${cleaned}</span><span class='remove' data-index='${index}'>×</span>`;
-            formulaList.appendChild(item);
-        });
-    }
-}
-
-function resetSteps() {
-    if (!state.goal) {
-        state.steps = [];
-        state.selectedStepId = null;
-        return;
-    }
-
-    state.steps = [
-        {
-            id: 0,
-            context: [...state.context],
-            goal: state.goal,
-            resolvedBy: null
-        }
+        const pythonFiles = [
+        "src/lexer.py",
+        "src/parser.py",
+        "src/logic.py",
+        "src/main.py"
     ];
-    state.selectedStepId = 0;
-}
 
-function renderSteps() {
-    const stepsList = document.getElementById('stepsList');
-    const stepSelect = document.getElementById('stepSelect');
-    stepsList.innerHTML = '';
-    stepSelect.innerHTML = '';
+        for (const file of pythonFiles) {
+            const response = await fetch(file);
 
-    if (state.steps.length === 0) {
-        stepsList.innerHTML = '<div class="view-placeholder">No steps available yet.</div>';
-        stepSelect.innerHTML = '<option value="">No step</option>';
-        return;
+            if (!response.ok) {
+                throw new Error(`Failed to fetch ${file}`);
+            }
+
+            const content = await response.text();
+
+            const filename = file.split("/").pop();
+
+            pyodide.FS.writeFile(`/src/${filename}`, content);
+        }
+        await pyodide.runPythonAsync(`
+        import sys
+        if "/" not in sys.path:
+            sys.path.insert(0, "/")
+        `);
+
+        // Import Python helpers
+        await pyodide.runPythonAsync(`
+            import json
+            from src.main import *
+        `);
+        
+        // DOM elements
+        const formulaInput = document.getElementById('formulaInput');
+        const addBtn = document.getElementById('addBtn');
+        const setGoalBtn = document.getElementById('setGoalBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const errorMsg = document.getElementById('errorMsg');
+        const formulaList = document.getElementById('formulaList');
+        const viewArea = document.getElementById('viewArea');
+        const rulesList = document.getElementById('rulesList');
+        const stepsList = document.getElementById('stepsList');
+        const stepSelect = document.getElementById('stepSelect');
+        const ruleSelect = document.getElementById('ruleSelect');
+        const applyRuleBtn = document.getElementById('applyRuleBtn');
+        
+        renderRules()
+
+        var formulas = [];       // array of {str: "..."}
+        var goal = null;        // {str: "..."}
+
+        function renderRules() {
+            const rulesInfo = pyodide
+                .globals
+                .get("available_rule_info")()
+                .toJs();
+
+            ruleSelect.innerHTML = rulesInfo
+                .map(rule =>
+                    `<option value="${rule.id}">${rule.name}</option>`
+                )
+                .join('');
+
+            rulesList.innerHTML = rulesInfo
+                .map(rule => `
+                    <div class="formula-item">
+                        <strong>${rule.name}</strong>
+                        <div class="rule-description">
+                            ${rule.description}
+                        </div>
+                    </div>
+                `)
+                .join('');
     }
 
-    state.steps.forEach((step) => {
-        const stepEl = document.createElement('div');
-        stepEl.className = 'proof-step step-item' + (step.id === state.selectedStepId ? ' selected' : '');
-        stepEl.dataset.id = step.id;
-        stepEl.innerHTML = `
-            <span class="num">[${step.id}]</span>
-            <span class="formula">${escapeHtml(normalizeFormula(step.goal))}</span>
-            <span class="rule">${step.resolvedBy ? `→ ${escapeHtml(step.resolvedBy)}` : '(pending)'}</span>
-            <div class="context">${escapeHtml(step.context.map(normalizeFormula).join(', ') || '(empty)')}</div>
-        `;
-        stepEl.addEventListener('click', () => {
-            state.selectedStepId = step.id;
-            renderSteps();
-        });
-        stepsList.appendChild(stepEl);
 
-        const option = document.createElement('option');
-        option.value = step.id;
-        option.textContent = `Step ${step.id}: ${normalizeFormula(step.goal)}`;
-        if (step.id === state.selectedStepId) {
-            option.selected = true;
-        }
-        stepSelect.appendChild(option);
-    });
-}
+        //RENDERING TREE | LINE PROOF
+        function renderProof(descriptionPyProxy) {
+            const lines = descriptionPyProxy.toJs();
+            console.log(lines)
+            viewArea.innerHTML =
+                '<h3>Proof state</h3>' +
+                lines.map(line => `<div class="proof-step">${line}</div>`).join('');
 
-function renderRulesPanel() {
-    const rulesList = document.getElementById('rulesList');
-    const ruleSelect = document.getElementById('ruleSelect');
-    rulesList.innerHTML = '';
-    ruleSelect.innerHTML = '';
-
-    defaultRules.forEach((rule) => {
-        const row = document.createElement('div');
-        row.className = 'formula-item';
-        row.innerHTML = `<strong>${escapeHtml(rule.value)}</strong> <small>${escapeHtml(rule.key)}</small><br><span>${escapeHtml(rule.description)}</span>`;
-        row.addEventListener('click', () => {
-            ruleSelect.value = rule.key;
-        });
-        rulesList.appendChild(row);
-
-        const option = document.createElement('option');
-        option.value = rule.key;
-        option.textContent = `${rule.value} — ${rule.description}`;
-        ruleSelect.appendChild(option);
-    });
-}
-
-function renderCliPreview() {
-    const viewArea = document.getElementById('viewArea');
-    viewArea.innerHTML = '';
-
-    const preview = document.createElement('pre');
-    preview.id = 'cliPreview';
-    preview.className = 'unicode-formula';
-
-    const contextText = state.context.length
-        ? state.context.map(normalizeFormula).join(', ')
-        : '(empty)';
-    const goalText = state.goal ? normalizeFormula(state.goal) : '(not set)';
-
-    // Determine proof completion: simple heuristic — all steps resolved
-    const proofCompleted = state.steps.length > 0 && state.steps.every((s) => s.resolvedBy);
-
-    preview.textContent = [
-        `Context complete with ${state.context.length} proposition(s).`,
-        '',
-        `Context: ${contextText}`,
-        `Goal: ${goalText}`,
-        `Status: ${proofCompleted ? 'Completed' : 'Pending'}`
-    ].join('\n');
-
-    viewArea.appendChild(preview);
-}
-
-function renderView() {
-    // Compute proof completion state
-    const proofCompleted = state.steps.length > 0 && state.steps.every((s) => s.resolvedBy);
-
-    renderFormulaList();
-    renderCliPreview();
-    renderSteps();
-    renderRulesPanel();
-
-    // Show completion message in the steps list if finished
-    const stepsList = document.getElementById('stepsList');
-    const actions = document.querySelector('.actions');
-    if (proofCompleted) {
-        stepsList.innerHTML = '<div class="view-placeholder">Proof completed.</div>';
-        if (actions) actions.style.display = 'none';
-    } else if (actions) {
-        actions.style.display = 'flex';
-    }
-
-    // Disable apply controls when there's no goal or proof is already completed
-    const applyRuleBtn = document.getElementById('applyRuleBtn');
-    const stepSelect = document.getElementById('stepSelect');
-    const ruleSelect = document.getElementById('ruleSelect');
-    const disableApply = !state.goal || proofCompleted;
-    if (applyRuleBtn) applyRuleBtn.disabled = disableApply;
-    if (stepSelect) stepSelect.disabled = disableApply;
-    if (ruleSelect) ruleSelect.disabled = disableApply;
-}
-
-function setError(message) {
-    document.getElementById('errorMsg').textContent = message;
-}
-
-function clearError() {
-    setError('');
-}
-
-function attachEvents() {
-    const formulaInput = document.getElementById('formulaInput');
-    const addBtn = document.getElementById('addBtn');
-    const setGoalBtn = document.getElementById('setGoalBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const formulaList = document.getElementById('formulaList');
-    const stepsList = document.getElementById('stepsList');
-    const stepSelect = document.getElementById('stepSelect');
-    const ruleSelect = document.getElementById('ruleSelect');
-    const applyRuleBtn = document.getElementById('applyRuleBtn');
-    const toggleButtons = document.querySelectorAll('.toggle-btn');
-
-    addBtn.addEventListener('click', () => {
-        clearError();
-        const raw = formulaInput.value;
-        if (!validateInput(raw)) {
-            setError('Please enter a valid formula before adding.');
-            return;
-        }
-        state.context.push(raw);
-        formulaInput.value = '';
-        resetSteps();
-        renderView();
-    });
-
-    setGoalBtn.addEventListener('click', () => {
-        clearError();
-        const raw = formulaInput.value;
-        if (!validateInput(raw)) {
-            setError('Please enter a valid goal formula.');
-            return;
-        }
-        state.goal = raw;
-        formulaInput.value = '';
-        resetSteps();
-        renderView();
-    });
-
-    applyRuleBtn.addEventListener('click', () => {
-        console.log("applyRuleBtn clicked")
-        clearError();
-    
-        const selectedId = Number(stepSelect.value);
-        const selectedRuleKey = ruleSelect.value;
-        console.log(selectedId, "\n",selectedRuleKey)
-        if (Number.isNaN(selectedId) || selectedRuleKey === '') {
-            setError('Select a step and a rule before applying.');
-            return;
-        }
-
-        const step = state.steps.find((item) => item.id === selectedId);
-        const rule = defaultRules.find((item) => item.key === selectedRuleKey);
-        console.log(step, rule)
-        if (!step || !rule) {
-            setError('Selected step or rule is invalid.');
-            return;
-        }
-
-        try {
-            const message = applyRuleToStep(step, rule);
-            console.log("Applying rule")
-            if (message) {
-                setError(message);
+            const proof = pyodide.globals.get('get_current_proof')();
+            console.log(proof)
+            if (!proof) {
                 return;
             }
-            console.log("Acepting rule")
-            state.selectedStepId = step.id;
-            renderView();
+
+            const steps = proof.steps.toJs();
+            const stepCount = steps.length;
+
+            // Rebuild step selector
+            stepSelect.innerHTML = '';
+
+            for (let i = 0; i < stepCount; i++) {
+                const step = steps[i];
+
+                if (step.fueCompletada()) {
+                    continue;
+                }
+
+                const option = document.createElement('option');
+
+                option.value = i;
+                option.textContent =
+                    `[${i}] ○ ${step.describe()}`;
+
+                stepSelect.appendChild(option);
+            }
+
+            // Auto-select first step
+            if (stepCount > 0) {
+                stepSelect.value = "0";
+            }
+
+            // Rebuild clickable steps
+            stepsList.innerHTML = '';
+
+            const selectedStep = parseInt(stepSelect.value || 0);
+
+            for (let i = 0; i < stepCount; i++) {
+                const step = steps[i];
+                const resolved = step.fueCompletada();
+
+                const div = document.createElement('div');
+
+                div.className =
+                    'step-item' +
+                    (i === selectedStep ? ' selected' : '');
+
+                div.dataset.index = i;
+
+                div.textContent =
+                    `[${i}] ${resolved ? '✓' : '○'} ${step.describe()}`;
+
+                div.addEventListener('click', () => {
+                    stepSelect.value = i;
+                    document
+                        .querySelectorAll('.step-item')
+                        .forEach(el => el.classList.remove('selected'));
+                    div.classList.add('selected');
+
+                    updateApplicableRules();
+                });
+
+                stepsList.appendChild(div);
+            }
+
+            updateApplicableRules();
+        }
+        /// Render formulas sidebar
+        function renderFormulas() {
+            formulaList.innerHTML = '';
             console.log("Rendering")
+            // Context formulas
+            if (formulas.length > 0) {
+                const ctxTitle = document.createElement('h4');
+                ctxTitle.textContent = 'Context';
+                formulaList.appendChild(ctxTitle);
 
-        } catch (error) {
-            setError(error.message);
+                formulas.forEach((f, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'formula-item';
+                    div.innerHTML = `
+                        <span class="remove" data-index="${idx}">×</span>
+                        <span class="unicode-formula">${f.str}</span>
+                    `;
+                    formulaList.appendChild(div);
+                });
+            }
+
+            // Goal
+            if (goal) {
+                console.log("Writing goal")
+                const goalTitle = document.createElement('h4');
+                goalTitle.textContent = 'Goal';
+                goalTitle.style.marginTop = '1rem';
+                formulaList.appendChild(goalTitle);
+
+                const div = document.createElement('div');
+                div.className = 'formula-item';
+                div.innerHTML = `
+                    <strong>⊢</strong>
+                    <span class="unicode-formula">${goal.str}</span>
+                `;
+                formulaList.appendChild(div);
+            }
         }
-    });
 
-    stepSelect.addEventListener('change', () => {
-        state.selectedStepId = Number(stepSelect.value);
-        renderSteps();
-    });
+        function showSteps() {
+            if (goal === null) {
+                return;
+            }
 
-    clearBtn.addEventListener('click', () => {
-        clearError();
-        state.context = [];
-        state.goal = null;
-        resetSteps();
-        renderView();
-    });
-
-    formulaList.addEventListener('click', (event) => {
-        if (!event.target.matches('.remove')) {
-            return;
+            
+            stepSelect
         }
-        const index = Number(event.target.dataset.index);
-        if (!Number.isNaN(index)) {
-            state.context.splice(index, 1);
-            resetSteps();
-            renderView();
-        }
-    });
 
-    toggleButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            toggleButtons.forEach((btn) => btn.classList.remove('active'));
-            button.classList.add('active');
-            state.view = button.dataset.view;
+        function updateApplicableRules() {
+            ruleSelect.innerHTML = '';
+            const stepIdx = parseInt(stepSelect.value);
+            if (isNaN(stepIdx)) {
+                return;
+            }
+            try {
+                const proof = pyodide.globals.get('get_current_proof')();
+                
+                if (!proof) {
+                    return;
+                }
+                
+                const rules = pyodide.globals.get("get_applicable_rules")(stepIdx).toJs();
+
+                rules.forEach(rule => {
+
+                    const option =
+                        document.createElement('option');
+
+                    option.value = rule.id;
+                    option.textContent = rule.name;
+
+                    ruleSelect.appendChild(option);
+                });
+
+            } catch (e) {
+                console.error(e);
+        }
+    }
+
+        function splitPremises(input) {
+            const result = [];
+
+            let current = "";
+            let inQuotes = false;
+
+            for (const ch of input) {
+                if (ch === '"') {
+                    inQuotes = !inQuotes;
+                    current += ch;
+                    continue;
+                }
+
+                if (ch === ';' && !inQuotes) {
+                    const trimmed = current.trim();
+
+                    if (trimmed) {
+                        result.push(trimmed);
+                    }
+
+                    current = "";
+                    continue;
+                }
+
+                current += ch;
+            }
+
+            const trimmed = current.trim();
+
+            if (trimmed) {
+                result.push(trimmed);
+            }
+
+            return result;
+        }
+        
+        addBtn.addEventListener('click', () => {
+            const raw = formulaInput.value.trim();
+            errorMsg.textContent = '';
+            if (!raw) {
+                errorMsg.textContent = 'Formula cannot be empty.';
+                return;
+            }
+            try {
+                // Parse in Python to validate and get prettified string
+                const parsed = pyodide.globals.get('parse_formula_with_lexer')(raw);
+                const pretty = parsed.prettify();
+                console.log(pretty)
+
+                
+                formulas.push({
+                    str: raw,
+                    pretty: pretty
+                }); // we store the prettified string (to avoid re-parsing) – but we could also store the original.
+                renderFormulas();
+                formulaInput.value = '';
+            } catch (e) {
+                errorMsg.textContent = `Parse error: ${e}`;
+            }
         });
-    });
-}
 
-window.addEventListener('DOMContentLoaded', async () => {
-    await initLogicEngine();
-    attachEvents();
-    renderView();
-});
+        setGoalBtn.addEventListener('click', () => {
+
+            const raw = formulaInput.value.trim();
+
+            errorMsg.textContent = '';
+
+            if (!raw) {
+                errorMsg.textContent = 'Goal cannot be empty.';
+                return;
+            }
+
+            try {
+                const parsed = pyodide.globals
+                    .get('parse_formula_with_lexer')(raw);
+                console.log(parsed)
+                goal = {
+                    str: raw,
+                    pretty: parsed.prettify()
+                };
+                console.log(goal)
+                formulaInput.value = '';
+                
+                renderFormulas();
+                console.log("Rendered formulas after set goal")
+
+                const initProof = pyodide.globals.get("init_proof");
+                const desc = initProof(formulas, goal);
+                console.log("Called init proof")
+                console.log(desc)
+                renderProof(desc);
+
+            } catch (e) {
+                errorMsg.textContent = `Parse error: ${e}`;
+        }
+    });
+
+        clearBtn.addEventListener('click', () => {
+            formulas = [];
+            goal = null;
+            renderFormulas();
+            viewArea.innerHTML = '<div class="view-placeholder">Add a context formula or set a goal to preview CLI output.</div>';
+            stepsList.innerHTML = '';
+            stepSelect.innerHTML = '';
+            errorMsg.textContent = '';
+            pyodide.runPython('_current_proof = None');
+        });
+
+        applyRuleBtn.addEventListener('click', () => {
+
+        const stepIdx = parseInt(stepSelect.value);
+        const ruleName = ruleSelect.value;
+
+        errorMsg.textContent = '';
+
+        try {
+
+            const result = pyodide.globals.get('apply_rule')(stepIdx, ruleName);
+
+            const res = result.toJs();
+
+            if (!res.success) {
+                errorMsg.textContent = res.error;
+                return;
+            }
+            const desc = pyodide.globals.get('proof_description')();
+            renderProof(desc);
+            const proof = pyodide.globals.get('get_current_proof')();
+            if (proof.isCompleted()) {
+                alert("🎉 Proof complete!");
+            }
+        } catch (e) {
+            errorMsg.textContent = `Error: ${e}`;
+        }
+    });
+
+        stepSelect.addEventListener('change', () => {
+            updateApplicableRules();
+        });
+
+
+        formulaList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove')) {
+                const idx = parseInt(e.target.dataset.index);
+                formulas.splice(idx, 1);
+                renderFormulas();
+            }
+        });
+
+}
+    
+    
+    main();
 </script>
 </body>
 </html>

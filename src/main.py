@@ -13,6 +13,7 @@ try:
 except Exception:
     pass
 
+_current_proof = None
 
 def parse_formula_with_lexer(expr: str) -> Optional[Prop]:
     """Parse a formula using the lexer and parser."""
@@ -91,6 +92,129 @@ def getResolvent() -> Prop:
             print(f"✗ {exc} Please try again.")
 
 
+def apply_rule(step_idx: int, rule_name: str):
+    global _current_proof
+
+    if _current_proof is None:
+        return {
+            "success": False,
+            "error": "No proof initialized."
+        }
+
+    if step_idx < 0 or step_idx >= len(_current_proof.steps):
+        return {
+            "success": False,
+            "error": f"Invalid step index: {step_idx}"
+        }
+
+    rule = next(
+        (
+            r for r in available_rules()
+            if r.__class__.__name__ == rule_name
+        ),
+        None
+    )
+
+    if rule is None:
+        return {
+            "success": False,
+            "error": f"Unknown rule: {rule_name}"
+        }
+
+    try:
+        applied, subgoals = _current_proof.aplicarRegla(
+            rule,
+            step_idx
+        )
+
+        if not applied:
+            return {
+                "success": False,
+                "error": "Rule is not applicable to the selected step."
+            }
+
+        return {
+            "success": True,
+            "subgoals": len(subgoals)
+        }
+
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": str(exc)
+        }
+
+
+def get_applicable_rules(step_idx):
+    global _current_proof
+
+    goal = _current_proof.steps[step_idx]
+
+    print(
+        "Selected goal:",
+        goal.formula,
+        type(goal.formula)
+    )
+
+    result = []
+
+    for rule in available_rules():
+        app = rule.applicable(goal)
+
+        print(
+            rule.__class__.__name__,
+            app
+        )
+
+        if app:
+            result.append({
+                "id": rule.__class__.__name__,
+                "name": rule.display_name()
+            })
+
+    return result
+def get_current_proof():
+    global _current_proof
+    return _current_proof
+
+def init_proof(formulas, goal):
+    global _current_proof
+
+    # Convert JS proxies to Python objects
+    if hasattr(formulas, "to_py"):
+        formulas = formulas.to_py()
+
+    if hasattr(goal, "to_py"):
+        goal = goal.to_py()
+
+    context = set()
+
+    for item in formulas:
+        if hasattr(item, "to_py"):
+            item = item.to_py()
+
+        formula_str = str(item["str"])
+
+        context.add(
+            parse_formula_with_lexer(formula_str)
+        )
+
+    if goal is None:
+        raise ValueError("Goal is required")
+
+    goal_formula = parse_formula_with_lexer(
+        str(goal["str"])
+    )
+
+    _current_proof = Proof(
+        Goal(
+            context=context,
+            formula=goal_formula
+        )
+    )
+
+    return _current_proof.describe()
+
 class Rule:
     @abstractmethod
     def applicable(self, goal: Goal) -> bool:
@@ -103,6 +227,14 @@ class Rule:
     @property
     def label(self) -> str:
         return self.__class__.__name__
+    
+    @abstractmethod
+    def description(self) -> str:
+        raise NotImplementedError
+    
+    @abstractmethod
+    def display_name(self) -> str:
+        raise NotImplementedError
 
 
 class Axiom(Rule):
@@ -112,6 +244,12 @@ class Axiom(Rule):
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return []
 
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "Axiom"
+
 
 class AndIntro(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -120,6 +258,12 @@ class AndIntro(Rule):
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, goal.formula.left), Goal(goal.context, goal.formula.right)]
 
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "AndIntro"
+
 class AndElim1(Rule):
     def applicable(self, goal: Goal) -> bool:
         return True
@@ -127,6 +271,11 @@ class AndElim1(Rule):
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, AND(goal.formula, VAR("_")))]
 
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "AndElim1"
 
 class AndElim2(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -135,6 +284,11 @@ class AndElim2(Rule):
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, AND(VAR("_"), goal.formula))]
 
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "AndElim2"
 
 class OrIntro1(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -143,6 +297,11 @@ class OrIntro1(Rule):
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, goal.formula.left)]
 
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "OrIntro1"
 
 class OrIntro2(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -150,6 +309,12 @@ class OrIntro2(Rule):
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, goal.formula.right)]
+    
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "OrIntro2"
 
 
 class OrElim(Rule):
@@ -167,6 +332,12 @@ class OrElim(Rule):
             Goal(goal.context | {right}, goal.formula),
         ]
 
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "OrElim"
+
 class ImpIntro(Rule):
     def applicable(self, goal: Goal) -> bool:
         return isinstance(goal.formula, IMPLIES)
@@ -174,6 +345,11 @@ class ImpIntro(Rule):
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context | {goal.formula.premise}, goal.formula.conclusion)]
 
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "ImpIntro"
 
 class ImpElimination(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -183,12 +359,24 @@ class ImpElimination(Rule):
         formula = premises[0]
         return [Goal(goal.context, IMPLIES(formula, goal.formula))]
     
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "ImpElimination"
+    
 class NotIntro(Rule):
     def applicable(self, goal: Goal) -> bool:
         return isinstance(goal.formula, NEG)
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
             return [Goal(goal.context | {goal.formula}, BOTTOM())]
+    
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "NotIntro"
 
     
 class NotElimination(Rule):
@@ -199,12 +387,24 @@ class NotElimination(Rule):
         premisesValue = premises[0]
         raise [Goal(goal.context, premisesValue), Goal(goal.context, NEG(premisesValue))] 
     
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "NotElimination"
+    
 class BottomElimination(Rule):
     def applicable(self, goal: Goal) -> bool:
         return True
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, BOTTOM())]
+    
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "BottomElimination"
 
 class PBC(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -212,6 +412,12 @@ class PBC(Rule):
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context | {NEG(goal.formula)}, BOTTOM())]
+    
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "PBC"
 
 class LEM(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -219,6 +425,12 @@ class LEM(Rule):
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return []
+    
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "LEM"
 
 class NotNotElimination(Rule):
     def applicable(self, goal: Goal) -> bool:
@@ -226,6 +438,12 @@ class NotNotElimination(Rule):
 
     def subgoals(self, goal: Goal, *premises: Prop) -> list[Goal]:
         return [Goal(goal.context, NEG(NEG(goal.formula)))]
+    
+    def description(self) -> str:
+        return "Hola mundo"
+    
+    def display_name(self) -> str:
+        return "--Elimination"
 
 
 @dataclass
@@ -301,8 +519,42 @@ class Proof:
 
 
 def available_rules() -> list[Rule]:
-    return [Axiom(), AndIntro(), ImpIntro(), AndElim1(), AndElim2(), OrIntro1(), OrIntro2(), OrElim(), ImpElimination(), NotIntro(), NotElimination(), BottomElimination()]
+    rules = []
 
+    def collect(cls):
+        for subcls in cls.__subclasses__():
+            rules.append(subcls())
+            collect(subcls)
+
+    collect(Rule)
+
+    return rules
+
+def proof_description():
+    global _current_proof
+    
+    if _current_proof is None:
+        return []
+
+    return _current_proof.describe()
+
+def proof_complete():
+    global _current_proof
+
+    if _current_proof is None:
+        return False
+
+    return _current_proof.fueCompletada()
+
+def available_rule_info():
+    return [
+        {
+            "id": rule.__class__.__name__,
+            "name": rule.display_name(),
+            "description": rule.description(),
+        }
+        for rule in available_rules()
+    ]
 
 class ProofConsole:
     def __init__(self) -> None:
