@@ -94,10 +94,6 @@ def getResolvent() -> Prop:
 
 def apply_rule(step_idx: int, rule_name: str, premises=None):
     global _current_proof
-    
-    print("PREMISES RAW:", premises)
-    print("PREMISES TYPE:", type(premises))
-
 
     if premises is None:
         premises = []
@@ -105,10 +101,6 @@ def apply_rule(step_idx: int, rule_name: str, premises=None):
     
     if hasattr(premises, "to_py"):
         premises = premises.to_py()
-
-    print("AFTER TO_PY:", premises)
-    print(type(premises))
-    print(premises[0])
 
     if _current_proof is None:
         return {
